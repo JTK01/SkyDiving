@@ -10,10 +10,13 @@ import * as THREE from 'three'
 
 /** Camera poses for each scene (position in world units, angles in radians). */
 export const CAMERA_POSES = {
-  // Scene 01 — looking slightly up into the sky, above the sea of clouds
-  intro: { x: 0, y: 112, z: 60, pitch: 0.17, yaw: 0, roll: 0, fov: 55 },
-  // Scene 02/03 — pushed forward into the cloud bank
-  login: { x: 0, y: 108, z: 28, pitch: 0.14, yaw: 0, roll: 0, fov: 52 },
+  // Scene 01 — looking slightly up into the sky, above the sea of clouds.
+  // Placed far enough back that the flight into the hero cloud (≈230 units
+  // ahead, see CLOUD_CONFIG.transition.hero) reads as a real approach.
+  intro: { x: 0, y: 112, z: 330, pitch: 0.17, yaw: 0, roll: 0, fov: 55 },
+  // Scene 02/03 — inside the hero cloud: at its centre depth (z≈100), in its
+  // wide lower rows (centre y≈130), see CLOUD_CONFIG.transition.hero
+  login: { x: 0, y: 115, z: 100, pitch: 0.03, yaw: 0, roll: 0, fov: 60 },
   // Main world — behind & above the jumper, looking over the cloud sea
   world: { x: 0, y: 142, z: -140, pitch: -0.21, yaw: 0, roll: 0, fov: 58 },
 }
@@ -28,7 +31,9 @@ export const cine = {
   // the frame → layer invisible even when cover changes); 1 → 0 closes the
   // bank in from the edges, 0 → 1 tears it open from the centre
   open: 1,
-  push: 0, // how far the camera has drifted into the cloud interior
+  // fly-through speed inside the cloud: how fast the interior vapor streams
+  // past the camera (0 = still, ~0.25 = gentle drift, 1+ = rushing through)
+  push: 0,
 
   // ---- atmosphere ------------------------------------------------------
   brightness: 0, // global light level (0 = black, 1 = normal)
@@ -49,9 +54,26 @@ export const cine = {
   rigFov: 55,
   aspect: 16 / 9,
 
+  // frame the transition cloud layout is defined in. It is the *intro* pose,
+  // fixed in the world, so the camera can fly into / through the clouds.
+  anchorMatrix: new THREE.Matrix4(),
+  anchorFov: 55,
+
   // pointer, normalised -1..1 (for parallax)
   pointer: { x: 0, y: 0 },
 }
+
+const _anchor = new THREE.Object3D()
+_anchor.rotation.order = 'YXZ'
+/** Re-anchor the transition clouds to a camera pose (only while they are invisible). */
+export function anchorCloudsTo(pose) {
+  _anchor.position.set(pose.x, pose.y, pose.z)
+  _anchor.rotation.set(pose.pitch, pose.yaw, pose.roll)
+  _anchor.updateMatrixWorld(true)
+  cine.anchorMatrix.copy(_anchor.matrixWorld)
+  cine.anchorFov = pose.fov
+}
+anchorCloudsTo(CAMERA_POSES.intro)
 
 /**
  * True while the cloud-interior layer is fully closed and opaque (its back

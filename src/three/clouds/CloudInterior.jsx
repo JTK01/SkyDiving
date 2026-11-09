@@ -9,6 +9,9 @@ import { getCloudTextures } from './cloudTextures'
  * (Worley billows + fBm) lit with derivative normals, so the login backdrop
  * reads as real cloud depth rather than a flat noise texture.
  *
+ * While closed, the sheets stream outward from the centre at a speed set by
+ * cine.push — the camera keeps flying through mist behind the login card.
+ *
  * The bank is driven by two values:
  *  cover : overall strength (0 = absent, 1 = full)
  *  open  : radius of a billowy hole from the centre (1 = hole fills the frame)
@@ -44,7 +47,7 @@ const fragment = /* glsl */ `
   uniform sampler2D uVapor;
   uniform float uCover;
   uniform float uOpen;
-  uniform float uPush;
+  uniform float uPhase;
   uniform float uTime;
   uniform float uAspect;
   uniform float uBrightness;
@@ -86,17 +89,31 @@ const fragment = /* glsl */ `
     return vec4(col * cov, cov);
   }
 
+  // Endless fly-through: two copies of a sheet zoom in (features grow and
+  // stream outward from the centre, i.e. past the camera) half a cycle apart
+  // and cross-fade, so the motion never ends and never pops. The noise seed
+  // changes only while a copy is fully faded out.
+  vec4 flowSheet(vec2 p, float scale, vec2 drift, float seed, float thresh, float R, float openAmt, float phase) {
+    float f1 = fract(phase);
+    float f2 = fract(phase + 0.5);
+    vec4 a = sheet(p, scale * exp2(-f1), drift, seed + floor(phase) * 7.31, thresh, R, openAmt);
+    vec4 b = sheet(p, scale * exp2(-f2), drift, seed + 3.17 + floor(phase + 0.5) * 7.31, thresh, R, openAmt);
+    float wa = sin(3.14159 * f1);
+    float wb = sin(3.14159 * f2);
+    return (a * wa + b * wb) / (wa + wb);
+  }
+
   void main() {
     vec2 p = (vUv - 0.5) * vec2(max(uAspect, 1.0), max(1.0 / uAspect, 1.0));
     float t = uTime;
-    float push = uPush + sin(t * 0.05) * 0.05;
     float openAmt = smoothstep(0.0, 0.04, uOpen);
 
     // back → front; front sheets zoom faster (camera drifting into the bank)
-    // back sheet: threshold far below any density → always fully opaque
-    vec4 back  = sheet(p, 1.1 / (1.0 + push * 0.25), vec2(t * 0.004, t * 0.002), 0.0, -2.0, uOpen * 2.4 - 0.3, openAmt);
-    vec4 mid   = sheet(p, 1.6 / (1.0 + push * 0.5), vec2(-t * 0.008, t * 0.003), 3.7, 0.46, uOpen * 2.65 - 0.15, openAmt);
-    vec4 front = sheet(p, 2.4 / (1.0 + push * 0.9), vec2(t * 0.013, -t * 0.005), 7.3, 0.56, uOpen * 3.0 - 0.05, openAmt);
+    // back → front; every sheet flows toward the camera at its own rate
+    // (nearer sheets faster = parallax). Back sheet: always fully opaque.
+    vec4 back  = flowSheet(p, 1.1, vec2(t * 0.004, t * 0.002), 0.0, -2.0, uOpen * 2.4 - 0.3, openAmt, uPhase * 0.35);
+    vec4 mid   = flowSheet(p, 1.6, vec2(-t * 0.008, t * 0.003), 3.7, 0.46, uOpen * 2.65 - 0.15, openAmt, uPhase * 0.7 + 0.21);
+    vec4 front = flowSheet(p, 2.4, vec2(t * 0.013, -t * 0.005), 7.3, 0.56, uOpen * 3.0 - 0.05, openAmt, uPhase + 0.47);
 
     vec4 acc = back;
     acc = mid + acc * (1.0 - mid.a);
@@ -123,7 +140,7 @@ export default function CloudInterior() {
       blendDst: THREE.OneMinusSrcAlphaFactor,
       uniforms: {
         uVapor: { value: vapor },
-        uPush: { value: 0 },
+        uPhase: { value: 0 },
         uCover: { value: 0 },
         uOpen: { value: 0 },
         uTime: { value: 0 },
@@ -135,10 +152,12 @@ export default function CloudInterior() {
 
   useFrame((_, dt) => {
     const u = material.uniforms
-    u.uTime.value += Math.min(dt, 0.1)
+    const step = Math.min(dt, 0.1)
+    u.uTime.value += step
+    // fly-through travel: a slow drift even at rest, faster with push
+    u.uPhase.value += step * (0.03 + cine.push * 0.42)
     u.uCover.value = cine.cover
     u.uOpen.value = cine.open
-    u.uPush.value = cine.push
     u.uAspect.value = size.width / size.height
     u.uBrightness.value = Math.max(cine.brightness, 0.0)
     // skip the full-screen pass while the layer is absent or its hole lies

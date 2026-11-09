@@ -1,5 +1,5 @@
 import gsap from 'gsap'
-import { cine, CAMERA_POSES } from '../state/cinematic'
+import { cine, CAMERA_POSES, anchorCloudsTo } from '../state/cinematic'
 import { useExperience, PHASES } from '../state/useExperience'
 
 /**
@@ -72,32 +72,43 @@ const openBank = (tl, at, duration) =>
     .to(cine, { open: 1, duration: MIN, ease: 'sine.out' }, at + duration)
 
 // ---------------------------------------------------------------------------
-// Scene 02 — PRESS TO START → clouds converge & swallow the camera (≈3.5 s)
+// Scene 02 — PRESS TO START → the camera flies into the hero cloud (≈3.5 s)
+//
+//  0.3 → 2.4  accelerating flight toward the hero cumulus (it grows by real
+//             perspective until it fills the frame), fov opens 55 → 62
+//  2.4 → 3.3  through the front face into the cloud, decelerating
+//  2.5 → 3.0  the screen is already white → the interior layer fades in
+//             underneath the 3D vapor and takes over; push keeps mist
+//             streaming past the camera (and keeps drifting behind login)
+//  3.5        login card (fades in from 3.8 s)
 export function runConvergence() {
   if (store().locked) return null
   const tl = begin()
+  const login = CAMERA_POSES.login
   tl.call(() => store().setPhase(PHASES.CONVERGING), null, 0)
-    // arm the interior while its hole still fills the frame (invisible)
-    .to(cine, { open: 1, duration: MIN, ease: 'sine.inOut' }, 0)
-    .to(cine, { cover: 1, duration: 0.6, ease: 'sine.inOut' }, 0.3)
-    // 0.3s: frame-edge clouds start drifting inward; speed keeps increasing
+    // arm the interior unseen: closed (open 0) but absent (cover 0)
+    .to(cine, { open: 0, duration: MIN, ease: 'sine.inOut' }, 0)
+    // flight: accelerate toward the cloud …
+    .to(cine.cam, { z: 170, duration: 2.1, ease: 'power2.in' }, 0.3)
+    .to(cine.cam, { y: login.y, pitch: login.pitch, duration: 2.1, ease: 'sine.inOut' }, 0.3)
+    .to(cine.cam, { fov: 62, duration: 1.8, ease: 'power2.in' }, 0.6)
+    // … and on into it, easing off once inside (speeds match at 2.4 s)
+    .to(cine.cam, { z: login.z, duration: 0.9, ease: 'power1.out' }, 2.4)
+    .to(cine.cam, { fov: login.fov, duration: 0.9, ease: 'sine.out' }, 2.4)
+    // framing clouds: only a slight drift toward the flight path
     .to(cine, { converge: 1, duration: 2.6, ease: 'power1.in' }, 0.3)
-    // 0.8s: camera creeps toward the cloud bank, sky dims slightly
-    .add(camTo(gsap.timeline(), CAMERA_POSES.login, 0, 2.7, 'power1.inOut'), 0.8)
-    .to(cine, { brightness: 0.86, duration: 1.6, ease: 'sine.inOut' }, 0.8)
+    .to(cine, { brightness: 0.88, duration: 1.6, ease: 'sine.inOut' }, 0.8)
     .to(cine, { rays: 0.05, duration: 1.5, ease: 'sine.inOut' }, 0.8)
     .to(cine, { sway: 0.5, duration: 1.5, ease: 'sine.inOut' }, 0.8)
-    // 1.5s: the bank thickens — density only; size grows through perspective
-    .to(cine, { densityBoost: 1.3, duration: 1.3, ease: 'power1.in' }, 1.5)
-    .to(cine, { push: 1, duration: 2.4, ease: 'power2.out' }, 2.2)
-  // 1.8s → 3.1s: vapor closes in from the frame edges over the converging
-  // bodies; the centre (where the title sits) closes last
-  closeBank(tl, 1.8, 1.3)
-  tl
+    // inside: mist rushes past, then settles into a slow drift
+    .to(cine, { push: 1.1, duration: 0.7, ease: 'power1.in' }, 2.2)
+    .to(cine, { push: 0.25, duration: 1.6, ease: 'sine.out' }, 3.0)
+    // 2.5s: the hero cloud fills the frame → the interior takes over
+    .to(cine, { cover: 1, duration: 0.5, ease: 'sine.inOut' }, 2.5)
     // 2.8s: prepare the login UI (mounted, still invisible)
     .call(() => store().setAuthMounted(true), null, 2.8)
-    .to(cine, { brightness: 0.92, duration: 0.7, ease: 'sine.inOut' }, 2.8)
-    // 3.5s: reveal login (card fades in from 3.8 s on a fully closed bank)
+    .to(cine, { brightness: 0.94, duration: 0.7, ease: 'sine.inOut' }, 2.8)
+    // 3.5s: reveal login (card fades in from 3.8 s inside the cloud)
     .call(
       () => {
         store().setAuthView('login')
@@ -111,26 +122,35 @@ export function runConvergence() {
 }
 
 // ---------------------------------------------------------------------------
-// Scene 05 — Login success → clouds part, world revealed (≈5 s)
+// Scene 05 — Login success → fly out of the cloud, world revealed (5 s)
+//
+//  0.0 → 0.6  login card fades out (AuthStage) inside the cloud
+//  0.2 → 1.4  the camera accelerates forward, mist rushes past (push)
+//  1.2 → 2.5  the interior vapor thins and opens ahead of the camera while
+//             the 3D cloud around it still fills the frame
+//  ≈1.9 → 2.5 the thinning back of the hero cloud streams past the frame,
+//             clear sky opens up; god rays
+//  3.0 → 5.0  tilt down to the diving space (unchanged world pose)
 export function runDissipation() {
   const tl = begin()
   const world = CAMERA_POSES.world
   tl.call(() => store().setPhase(PHASES.DISSIPATING), null, 0)
-    // 0.0–0.6s: login card fades out on the closed bank (AuthStage)
-    // 0.0s: bodies behind the bank start to drift apart well *before* the
-    // bank opens, so the opening reveals clouds already leaving (no re-cover)
-    .to(cine, { disperse: 1, duration: 4.2, ease: 'sine.inOut' }, 0.0)
-    .to(cine, { push: 1.6, duration: 1.6, ease: 'power1.in' }, 0)
-  // 1.0s → 3.3s: the interior tears open from the centre → blue sky
-  openBank(tl, 1.0, 2.3)
+    .to(cine, { push: 1.3, duration: 1.2, ease: 'power1.in' }, 0.2)
+    // fly forward through the thinning back of the cloud …
+    .to(cine.cam, { z: -20, duration: 2.2, ease: 'power1.in' }, 0.4)
+    // … and on to the world pose, easing off (≈110 u/s at the hand-over)
+    .to(cine.cam, { z: world.z, duration: 2.0, ease: 'power1.out' }, 2.6)
+    // vapor thins (cover) and parts ahead of the camera (open)
+    .to(cine, { cover: 0, duration: 1.3, ease: 'sine.inOut' }, 1.2)
+  openBank(tl, 1.4, 1.4)
   tl
+    // the framing clouds drift gently outward and fade once off-screen
+    .to(cine, { disperse: 1, duration: 4.2, ease: 'sine.inOut' }, 0.0)
+    .to(cine, { push: 0, duration: 1.2, ease: 'sine.out' }, 2.4)
     .to(cine, { brightness: 1.04, duration: 1.5, ease: 'sine.out' }, 0.8)
-    // 1.5s: camera pushes forward, light floods through the gap
-    .to(cine.cam, { z: world.z, duration: 3.5, ease: 'power2.inOut' }, 1.5)
-    .to(cine, { rays: 0.42, duration: 1.0, ease: 'power2.out' }, 1.3)
-    .to(cine, { rays: 0.13, duration: 2.2, ease: 'sine.inOut' }, 2.8)
-    // 2.0s: density drops, horizon & far world appear
-    .to(cine, { densityBoost: 1, duration: 2.0, ease: 'sine.inOut' }, 2.0)
+    .to(cine, { rays: 0.42, duration: 1.0, ease: 'power2.out' }, 1.8)
+    .to(cine, { rays: 0.13, duration: 2.0, ease: 'sine.inOut' }, 3.0)
+    // 2.0s: horizon & far world appear
     .to(cine, { terrainFog: 0.00055, cloudFog: 0.00045, duration: 2.6, ease: 'sine.inOut' }, 2.0)
     // 3.0s: tilt from sky view to the diving space below
     .to(
@@ -141,9 +161,6 @@ export function runDissipation() {
     .to(cine, { worldReveal: 1, duration: 1.8, ease: 'sine.out' }, 3.0)
     .to(cine, { wind: 14, sway: 1, duration: 2.5, ease: 'sine.inOut' }, 2.5)
     .to(cine, { brightness: 1, duration: 1.2, ease: 'sine.inOut' }, 3.4)
-    // 3.2s+: the bank is fully open (invisible) — disarm it with a tween;
-    // open stays 1 (resting state), so nothing on screen changes
-    .to(cine, { cover: 0, duration: 0.6, ease: 'sine.inOut' }, 4.2)
     // 5.0s: SKY DIVE METAVERSE
     .call(
       () => {
@@ -164,8 +181,10 @@ export function runReconvergence() {
   const tl = begin()
   const login = CAMERA_POSES.login
   tl.call(() => store().setPhase(PHASES.RECONVERGING), null, 0)
-    // interior is still disarmed (cover 0, open 1): reset push & arm it unseen
-    .to(cine, { push: 0, duration: 0.5, ease: 'sine.inOut' }, 0)
+    // the transition clouds are all faded out here (disperse = 1): re-anchor
+    // them to the current view so they can roll back in around it
+    .call(() => anchorCloudsTo(cine.cam), null, 0)
+    // interior is still disarmed (cover 0, open 1): arm it unseen
     .to(cine, { open: 1, duration: MIN, ease: 'sine.inOut' }, 0)
     .to(cine, { cover: 1, duration: 0.6, ease: 'sine.inOut' }, 0.3)
     // the bodies drift back in from beyond the frame; HUD fades with them
@@ -173,13 +192,17 @@ export function runReconvergence() {
     .to(cine, { disperse: 0, duration: 2.4, ease: 'sine.inOut' }, 0)
     .to(cine, { densityBoost: 1.3, duration: 1.6, ease: 'sine.inOut' }, 0.6)
     .to(cine, { wind: 3.5, rays: 0.05, sway: 0.5, duration: 1.8, ease: 'sine.inOut' }, 0)
-    .to(cine, { push: 1, duration: 2.0, ease: 'power2.out' }, 1.8)
+    .to(cine, { push: 0.9, duration: 1.2, ease: 'sine.in' }, 1.6)
+    .to(cine, { push: 0.25, duration: 1.0, ease: 'sine.out' }, 2.9)
   // 1.4s → 2.7s: vapor closes in from the edges
   closeBank(tl, 1.4, 1.3)
   tl
     // 2.75s: bank fully closed → move the camera & restore fog, unseen
     .add(camTo(gsap.timeline(), login, 0, 0.6, 'sine.inOut'), 2.75)
     .to(cine, { terrainFog: 0.0018, cloudFog: 0.00055, duration: 0.6, ease: 'sine.inOut' }, 2.75)
+    // still closed: put the clouds back on the intro flight path so the next
+    // login flies out of the hero cloud exactly like the first time
+    .call(() => anchorCloudsTo(CAMERA_POSES.intro), null, 3.0)
     .call(() => store().setAuthMounted(true), null, 2.9)
     .call(
       () => {

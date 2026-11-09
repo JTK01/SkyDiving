@@ -40,6 +40,13 @@ export const CLOUD_LOOK = {
   litRamp: [0.22, 1.05], // shadow → lit
   sideLight: 0.32, // directional modelling from the sun side (was 0.4)
   relief: 0.22, // billow crown/crease contrast (was ~0.4, high-frequency)
+  // Per-sprite modelling. Every puff is lit as a little sphere (normal from
+  // its own silhouette, top-lit, darker base, bright rim); strong values
+  // outline each puff as a separate ball. Low values let the per-puff light
+  // (its height in the whole cloud body) carry the form → one silhouette.
+  spriteNormal: 0.32, // weight of the sprite's own silhouette normal (was 1)
+  spriteGradient: 0.2, // weight of the sprite's own top→bottom gradient (was 1)
+  spriteRim: 0.25, // weight of the bright rim on the sprite's own edge (was 1)
 }
 
 const f = (v) => Number(v).toFixed(4)
@@ -48,6 +55,7 @@ export const cloudVertex = /* glsl */ `
   attribute vec3 iPos;
   attribute vec4 iData;   // sizeX, sizeY, alpha, seed
   attribute vec4 iExtra;  // tile index, underside shade, per-puff light, rotation
+  attribute float iSlope; // light rise from the puff's bottom to top edge (body gradient)
 
   varying vec2 vUv;
   varying vec2 vTile;
@@ -58,6 +66,7 @@ export const cloudVertex = /* glsl */ `
   varying float vDist;
   varying vec3 vViewPos;
   varying float vRot;
+  varying float vSlope;
 
   void main() {
     vec3 right = vec3(viewMatrix[0][0], viewMatrix[1][0], viewMatrix[2][0]);
@@ -81,6 +90,7 @@ export const cloudVertex = /* glsl */ `
     vDist = -mv.z;
     vViewPos = mv.xyz;
     vRot = iExtra.w;
+    vSlope = iSlope;
   }
 `
 
@@ -107,6 +117,7 @@ export const cloudFragment = /* glsl */ `
   varying float vDist;
   varying vec3 vViewPos;
   varying float vRot;
+  varying float vSlope;
 
   float sampleD(vec2 uv) {
     uv = clamp(uv, 0.004, 0.996);
@@ -152,7 +163,7 @@ export const cloudFragment = /* glsl */ `
     float sr = sin(vRot);
     g = vec2(g.x * cr - g.y * sr, g.x * sr + g.y * cr);
     vec2 cc = vec2(c.x * cr - c.y * sr, c.x * sr + c.y * cr);
-    vec3 n = normalize(vec3(-g * 0.11 + cc * 0.25, 1.0));
+    vec3 n = normalize(vec3((-g * 0.11 + cc * 0.25) * ${f(CLOUD_LOOK.spriteNormal)}, 1.0));
 
     vec2 sun2 = uSunView.xy;
     float sl = length(sun2);
@@ -162,19 +173,22 @@ export const cloudFragment = /* glsl */ `
 
     // billow relief: brighter crowns, grey-blue creases between cells
     float relief = ((v1.g - 0.5) * 0.55 + (v2.g - 0.5) * 0.35 + (v3.g - 0.5) * 0.1) * ${f(CLOUD_LOOK.relief)} * 2.0;
-    float lit = vLight * 0.5 + 0.3 + side * ${f(CLOUD_LOOK.sideLight)} - absorb * 0.35 + cc.y * 0.1 - dens * 0.04 + relief;
+    // body light continues smoothly through the puff (see iSlope)
+    float bodyLight = vLight + cc.y * vSlope;
+    float lit = bodyLight * 0.55 + 0.28 + side * ${f(CLOUD_LOOK.sideLight)} - absorb * 0.35 * ${f(CLOUD_LOOK.spriteNormal)}
+              + cc.y * 0.1 * ${f(CLOUD_LOOK.spriteGradient)} - dens * 0.04 + relief;
     lit = clamp(lit, 0.0, 1.0);
     vec3 col = mix(uDeep, uShadow, smoothstep(${f(CLOUD_LOOK.shadeRamp[0])}, ${f(CLOUD_LOOK.shadeRamp[1])}, lit));
     col = mix(col, uLit, smoothstep(${f(CLOUD_LOOK.litRamp[0])}, ${f(CLOUD_LOOK.litRamp[1])}, lit));
 
     // flat, darker cumulus bases
-    col *= mix(1.0 - 0.2 * vShade, 1.0, smoothstep(-0.75, 0.2, cc.y));
+    col *= mix(1.0 - 0.2 * vShade * ${f(CLOUD_LOOK.spriteGradient)}, 1.0, smoothstep(-0.75, 0.2, cc.y));
 
     // silver lining on thin, backlit vapor + rim catching the sun
     vec3 viewDir = normalize(vViewPos);
     float fs = pow(max(dot(viewDir, uSunView), 0.0), 5.0);
     float thin = 1.0 - smoothstep(0.03, 0.4, dens);
-    col += uSunColor * (fs * (thin * 0.45 + 0.08) + thin * 0.07 * max(side, 0.0));
+    col += uSunColor * (fs * (thin * 0.45 * ${f(CLOUD_LOOK.spriteRim)} + 0.08) + thin * 0.07 * ${f(CLOUD_LOOK.spriteRim)} * max(side, 0.0));
 
     col *= uBrightness;
     float f = 1.0 - exp(-vDist * uFog);

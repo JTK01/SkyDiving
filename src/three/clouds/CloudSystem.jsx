@@ -92,10 +92,12 @@ export default function CloudSystem({ quality }) {
     const iPos = new THREE.InstancedBufferAttribute(new Float32Array(count * 3), 3)
     const iData = new THREE.InstancedBufferAttribute(new Float32Array(count * 4), 4)
     const iExtra = new THREE.InstancedBufferAttribute(new Float32Array(count * 4), 4)
-    ;[iPos, iData, iExtra].forEach((a) => a.setUsage(THREE.DynamicDrawUsage))
+    const iSlope = new THREE.InstancedBufferAttribute(new Float32Array(count), 1)
+    ;[iPos, iData, iExtra, iSlope].forEach((a) => a.setUsage(THREE.DynamicDrawUsage))
     geo.setAttribute('iPos', iPos)
     geo.setAttribute('iData', iData)
     geo.setAttribute('iExtra', iExtra)
+    geo.setAttribute('iSlope', iSlope)
     geo.instanceCount = count
 
     const mat = new THREE.ShaderMaterial({
@@ -136,7 +138,7 @@ export default function CloudSystem({ quality }) {
       depth: new Float32Array(count),
       order: Array.from({ length: count }, (_, i) => i),
     }
-    return { geometry: geo, material: mat, buffers: { iPos, iData, iExtra, work } }
+    return { geometry: geo, material: mat, buffers: { iPos, iData, iExtra, iSlope, work } }
   }, [count, quality.atlasTile])
 
   const tmp = useMemo(
@@ -167,9 +169,10 @@ export default function CloudSystem({ quality }) {
     const time = u.uTime.value
     const seaCfg = CLOUD_CONFIG.sea
     const cuCfg = CLOUD_CONFIG.cumulus
-    const tanH = Math.tan(THREE.MathUtils.degToRad(cine.rigFov) / 2)
+    // transition bodies live in the fixed anchor frame (intro pose by default)
+    const tanH = Math.tan(THREE.MathUtils.degToRad(cine.anchorFov) / 2)
     const aspect = cine.aspect
-    const rig = cine.rigMatrix.elements
+    const rig = cine.anchorMatrix.elements
     const C = cine.converge
     const P = cine.disperse
     const boost = cine.densityBoost
@@ -210,8 +213,10 @@ export default function CloudSystem({ quality }) {
         const st = updateCloudBody(p.cloud, C, P, time, frame)
         const cl = p.cloud
         // world size fixed from the rest framing → real perspective growth
-        // portrait screens: size the bodies against the (narrow) width instead
-        const S = cl.sizeNorm * 2 * cl.rest.d * tanH * st.scale * portrait
+        // portrait screens: size the framing bodies against the (narrow) width
+        // instead — but never the hero cloud: the camera physically flies
+        // through it, so it must keep its world size on every screen
+        const S = cl.sizeNorm * 2 * cl.rest.d * tanH * st.scale * (cl.layer === 'hero' ? 1 : portrait)
         const ca = Math.cos(st.ang)
         const sa = Math.sin(st.ang)
         const ox = (p.ox * ca - p.oy * sa) * S
@@ -221,7 +226,7 @@ export default function CloudSystem({ quality }) {
         const lx = st.x * halfH * aspect + ox
         const ly = st.y * halfH + oy
         const lz = -st.d + p.oz * S
-        // rig matrix (column-major)
+        // anchor matrix (column-major)
         px[i] = rig[0] * lx + rig[4] * ly + rig[8] * lz + rig[12]
         py[i] = rig[1] * lx + rig[5] * ly + rig[9] * lz + rig[13]
         pz[i] = rig[2] * lx + rig[6] * ly + rig[10] * lz + rig[14]
@@ -243,6 +248,7 @@ export default function CloudSystem({ quality }) {
     const pos = buffers.iPos.array
     const dat = buffers.iData.array
     const ext = buffers.iExtra.array
+    const slp = buffers.iSlope.array
     for (let k = 0; k < count; k++) {
       const i = order[k]
       const p = puffs[i]
@@ -257,10 +263,12 @@ export default function CloudSystem({ quality }) {
       ext[k * 4 + 1] = p.shade
       ext[k * 4 + 2] = p.light
       ext[k * 4 + 3] = rot[i]
+      slp[k] = p.slope || 0
     }
     buffers.iPos.needsUpdate = true
     buffers.iData.needsUpdate = true
     buffers.iExtra.needsUpdate = true
+    buffers.iSlope.needsUpdate = true
     // ?debug: CPU cost of the per-frame cloud update (positions + depth sort)
     if (window.__skydive) window.__skydive.cloudMs = performance.now() - t0
   })

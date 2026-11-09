@@ -10,13 +10,13 @@ import * as THREE from 'three'
 
 /** Camera poses for each scene (position in world units, angles in radians). */
 export const CAMERA_POSES = {
-  // Scene 01 — looking slightly up into the sky, above the sea of clouds.
-  // Placed far enough back that the flight into the hero cloud (≈230 units
-  // ahead, see CLOUD_CONFIG.transition.hero) reads as a real approach.
-  intro: { x: 0, y: 112, z: 330, pitch: 0.17, yaw: 0, roll: 0, fov: 55 },
-  // Scene 02/03 — inside the hero cloud: at its centre depth (z≈100), in its
-  // wide lower rows (centre y≈130), see CLOUD_CONFIG.transition.hero
-  login: { x: 0, y: 115, z: 100, pitch: 0.03, yaw: 0, roll: 0, fov: 60 },
+  // Scene 01 — high above two cloud layers: the start deck (y≈270–370,
+  // see CLOUD_CONFIG.startDeck) and the sea of clouds far below; looking
+  // slightly below the horizon through the open centre of the deck
+  intro: { x: 0, y: 540, z: 60, pitch: -0.18, yaw: 0, roll: 0, fov: 58 },
+  // Scene 02/03 — skydiving: inside the start deck's descent cluster,
+  // looking almost straight down
+  login: { x: 0, y: 300, z: -40, pitch: -1.2, yaw: 0, roll: 0, fov: 62 },
   // Main world — behind & above the jumper, looking over the cloud sea
   world: { x: 0, y: 142, z: -140, pitch: -0.21, yaw: 0, roll: 0, fov: 58 },
 }
@@ -34,6 +34,7 @@ export const cine = {
   // fly-through speed inside the cloud: how fast the interior vapor streams
   // past the camera (0 = still, ~0.25 = gentle drift, 1+ = rushing through)
   push: 0,
+  deck: 1, // start-deck opacity (1 before WORLD, 0 in WORLD)
 
   // ---- atmosphere ------------------------------------------------------
   brightness: 0, // global light level (0 = black, 1 = normal)

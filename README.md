@@ -17,11 +17,11 @@ npm run preview    # 빌드 결과 미리보기
 
 | Phase | 내용 | 길이 |
 |---|---|---|
-| `intro` | 하늘 페이드 인 → 0.8s SKY DIVE → 1.8s PRESS TO START, 카메라 미세 호흡 | 대기 |
-| `converging` | 카메라가 가속하며 정면의 거대한 적운(hero)으로 날아가 원근으로 화면이 채워지고(fov 55→62), 2.4s 구름 속으로 진입 → 2.5~3.0s 구름 내부 레이어로 전환, 수증기가 계속 스쳐 지나감 | 3.5s |
+| `intro` | 고도 540에서 수평선 약간 아래를 바라봄: 상층 구름층(start deck)과 그 아래 구름바다, 화면 중앙은 트여 있음 | 대기 |
+| `converging` | 스카이다이빙: pitch −0.18→−1.2로 숙이며 낙하 시작(가속), 상층 구름층의 강하 클러스터로 진입하는 순간(2.35s) 구름 내부 레이어로 전환, 로그인은 구름 속에서 아래를 보는 상태 | 3.5s |
 | `login` | 구름 내부 배경 위에 유리 카드 blur→sharp, 필드 순차 등장 | 1.5s |
 | (signup) | 로그인 ⇄ 회원가입 카드 크로스페이드, 배경 유지 | 0.8s |
-| `dissipating` | 카메라가 계속 전진, 수증기가 옅어지며 앞쪽부터 열림, 구름 뒤편의 얇은 자락이 화면 밖으로 지나간 뒤 맑은 하늘, God Rays, 틸트, 월드 등장 | 5s |
+| `dissipating` | 구름 안 일정 속도 하강(60 u/s) → 상층 구름층 아래로 빠져나오며 열림 → 감속하며 pitch를 들어 고도 142의 WORLD 포즈로 수평 비행 전환 | 5s |
 | `world` | SKY DIVE METAVERSE 메인 월드 + HUD | – |
 | `reconverging` | SIGN OUT 시 구름이 다시 몰려와 로그인으로 복귀 | 2.8s |
 
@@ -72,11 +72,11 @@ src/
 구름은 이미지 페이드가 아니라 **실제로 이동하는 3D 구름 개체**입니다.
 
 - **레이어** — `sea`(구름 바다), `cumulus`(원경 적운 기둥), `transition`(카메라 기준 전환 구름). 모두 하나의 `InstancedBufferGeometry`로 그리고, 반투명 합성이 정확하도록 매 프레임 뒤→앞 정렬합니다.
-- **전환 구름 = 큰 적운 덩어리** — `foreground`/`midground`/`background` 레이어(각 3/8/6개)의 덩어리마다 퍼프 8~14개가 행 구조(넓고 평평한 바닥 → 위로 갈수록 작은 퍼프)로 촘촘히 겹쳐 하나의 실루엣을 이룸. 퍼프마다 몸체 높이에 따른 조명 기울기(`iSlope`)를 이어 받아 퍼프 경계가 드러나지 않음
-- **월드 고정 레이아웃** — 전환 구름은 인트로 카메라 기준 화면 좌표로 배치된 뒤 월드에 고정(`cine.anchorMatrix`) → 카메라가 실제로 날아가며 시차가 생기고 구름을 통과함
-- **hero 구름** — 비행 경로 위의 거대한 적운. 경로를 따라 5장의 완전한 구름 면(slice)으로 구성되어, 접근부터 마지막 면을 빠져나갈 때까지 정면이 항상 구름으로 채워짐. 출구 쪽 면은 얇고 반투명한 자락(`sliceAlpha`, `sliceDepth`)
-- **구름 속(CloudInterior)** — 수증기 시트가 끝없이 확대되며 바깥으로 흘러가는 fly-through(`cine.push` = 속도)
-- **튜닝** — `src/three/clouds/cloudLayout.js`의 `CLOUD_CONFIG.transition`(레이어별 개수·퍼프 수·위치·깊이·크기, `hero`의 거리·크기·slice 구성)과 `sea`(퍼프 수·크기). 비행 타이밍과 카메라 포즈는 `src/scenes/CloudTransition.js`, `src/state/cinematic.js`의 `CAMERA_POSES`.
+- **시작 화면 = WORLD 레이어 + start deck** — 시작 화면은 WORLD의 sea·cumulus 레이어를 그대로 보여 주고, 그 위에 상층 구름층(`CLOUD_CONFIG.startDeck`)을 깝니다. start deck은 cumulus와 *같은 퍼프 생성 함수*(크기·알파·타일·명암·기울기)로 cumulus 상층 덱(y 270~370)을 템플릿 삼아 지터 격자에 배치하며, 시작 화면 중앙 40% 영역과 강하 지점 주변은 비웁니다. WORLD 진입 전 화면 밖에서 `cine.deck`으로 사라지므로 WORLD는 이전과 동일합니다.
+- **강하 클러스터** — 시작 카메라 바로 아래(x 0, z −60)의 촘촘한 구름. START에서 카메라가 낙하하며 통과하고, 로그인 성공 후 그 아래로 빠져나옵니다.
+- **transition / hero** — 현재 비활성(`transition.enabled: false`). 코드는 남아 있어 다시 켤 수 있습니다.
+- **구름 속(CloudInterior)** — 수증기 시트가 끝없이 확대되며 바깥으로 흘러가는 fly-through(`cine.push` = 속도). 아래를 보며 낙하할 때도 같은 방향으로 흐릅니다.
+- **튜닝** — `src/three/clouds/cloudLayout.js`의 `CLOUD_CONFIG.startDeck`(강하 클러스터, 격자·간격·빈칸 비율, 중앙 비우기 `keepClear`). `sea`·`cumulus`는 WORLD 구름이므로 시작 화면 때문에 바꾸지 않습니다. 비행 타이밍과 카메라 포즈는 `src/scenes/CloudTransition.js`, `src/state/cinematic.js`의 `CAMERA_POSES`.
 
 ### 질감 조정 상수
 

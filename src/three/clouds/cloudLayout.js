@@ -1,15 +1,16 @@
 /**
  * Cloud layout configuration + puff generation.
  *
- * Three layers share one instanced, depth-sorted draw call:
- *  - sea        : the endless sea of clouds below the camera
- *  - cumulus    : towering cumulus clusters in the distance
- *  - transition : large cumulus bodies on foreground / midground /
- *                 background layers framing the intro, plus one *hero* cloud
- *                 on the flight path that the camera flies into on START and
- *                 out of on login. Laid out in the intro camera's frame and
- *                 then fixed in the world, so the camera's own motion gives
- *                 the parallax and the fly-through.
+ * Layers share one instanced, depth-sorted draw call:
+ *  - sea        : the endless sea of clouds (WORLD)
+ *  - cumulus    : towering cumulus clusters + two high decks (WORLD)
+ *  - startDeck  : the upper cloud layer under the start camera. Built with
+ *                 the *same* cumulus puff recipe, using the cumulus high
+ *                 decks as template, spread wide around the skydive descent
+ *                 point with the centre of the start view left open. Only
+ *                 shown before WORLD (cine.deck), so WORLD is unchanged.
+ *  - transition : camera-anchored cloud bodies + hero cloud (currently
+ *                 disabled — the start screen shows the world layers).
  *
  * Every value that shapes the look (position, size, density, direction) lives
  * in CLOUD_CONFIG so the art direction can be tuned without touching code.
@@ -60,6 +61,9 @@ export const CLOUD_CONFIG = {
    *  disperse        : gentle outward drift on login, fades once off-screen
    */
   transition: {
+    // off: the start screen now shows the WORLD sea/cumulus layers plus the
+    // start deck, with nothing in the centre of the view
+    enabled: false,
     shade: 0.55,
     layers: {
       background: {
@@ -107,6 +111,30 @@ export const CLOUD_CONFIG = {
     upBias: 0.22, // scatter direction: mostly sideways & up, never straight down
     tiles: [0, 1, 2, 0, 1],
   },
+  /**
+   * Upper cloud layer under the start camera (intro pose y 540). Puffs come
+   * from the cumulus recipe (size / alpha / tiles / shade / light) and each
+   * cluster takes its height band from one of the cumulus high decks
+   * (y ≥ 200: y 270 h 70, y 310 h 60). x/z in world units.
+   *  descent : the dense cluster right under the skydive drop point — the
+   *            camera falls through it (START) and out of its underside
+   *  clusters: the rest of the deck, kept out of the central 40 % of the
+   *            start view so the sea below and the horizon stay open there
+   */
+  startDeck: {
+    descent: { x: 0, z: -60, w: 560, puffs: 30 },
+    // the rest of the deck: one cumulus-recipe cluster per cell of a jittered
+    // grid, with random gaps so the sea below shows through
+    grid: { x: [-3300, 3300], z: [-3500, 900], step: [620, 560], jitter: 0.3, gap: 0.18 },
+    cluster: { w: [520, 700], puffs: [8, 11] },
+    // keep the central 40 % of the start view open (and the descent area to
+    // the descent cluster). Start camera: x 0, y 540, z 60, looking −z with
+    // pitch −0.18, vertical fov 58°. A ray through the centre box's lower
+    // edge reaches the deck top (y≈400) ≈335 units ahead; the box spans
+    // ±0.394 × forward distance sideways. `margin` ≈ cluster + puff radius.
+    keepClear: { camZ: 60, from: 335, slope: 0.394, margin: 300 },
+    descentClear: 330,
+  },
 }
 
 function makeRng(seed) {
@@ -123,7 +151,7 @@ function makeRng(seed) {
 const lerpR = (rng, [a, b]) => a + (b - a) * rng()
 const pick = (rng, arr) => arr[Math.floor(rng() * arr.length)]
 
-export const LAYER = { SEA: 0, CUMULUS: 1, TRANSITION: 2 }
+export const LAYER = { SEA: 0, CUMULUS: 1, TRANSITION: 2, DECK: 3 }
 
 /**
  * Build the static description of every puff. Per-frame positions are derived
@@ -157,16 +185,16 @@ export function buildPuffs(scale = 1, config = CLOUD_CONFIG) {
 
   // --- cumulus clusters ---------------------------------------------------
   const cu = config.cumulus
-  cu.clusters.forEach((c, ci) => {
-    const n = Math.max(6, Math.round(c.puffs * (scale < 1 ? 0.75 : 1)))
-    for (let i = 0; i < n; i++) {
+  // one cumulus puff of cluster c (shared by the WORLD cumulus and the
+  // start deck, so both have exactly the same form and texture)
+  const cumulusPuff = (c, ci, layer) => {
       const t = rng()
       // narrower towards the top → towering cumulus
       const taper = 1 - t * 0.55
       const size = lerpR(rng, cu.size) * (0.7 + 0.5 * taper)
       const ox = (rng() * 2 - 1) * c.w * cu.spread * taper
       puffs.push({
-        layer: LAYER.CUMULUS,
+        layer,
         cluster: ci,
         // higher & sun-facing (+x) puffs are lit, the base sits in shadow
         light: Math.min(1, 0.3 + t * 0.6 + (ox / c.w) * 0.25 + rng() * 0.12),
@@ -184,11 +212,19 @@ export function buildPuffs(scale = 1, config = CLOUD_CONFIG) {
       const q = puffs[puffs.length - 1]
       q.slope = (q.sy * 0.5 * 0.6) / c.h
       q.light = Math.min(1, 0.3 + t * 0.6 + (ox / c.w) * 0.2)
-    }
+  }
+  cu.clusters.forEach((c, ci) => {
+    const n = Math.max(6, Math.round(c.puffs * (scale < 1 ? 0.75 : 1)))
+    for (let i = 0; i < n; i++) cumulusPuff(c, ci, LAYER.CUMULUS)
   })
 
-  // --- transition cloud bodies -------------------------------------------
+  // --- transition cloud bodies (disabled) ----------------------------------
   const tr = config.transition
+  if (tr.enabled) buildTransition()
+  buildStartDeck()
+  return puffs
+
+  function buildTransition() {
   const layerScale = scale < 1 ? 0.6 : 1
   const puffScale = scale < 1 ? 0.75 : 1
 
@@ -338,5 +374,35 @@ export function buildPuffs(scale = 1, config = CLOUD_CONFIG) {
     for (let i = before; i < puffs.length; i++) puffs[i].oz = oz + puffs[i].oz
   })
 
-  return puffs
+  }
+
+  // --- start deck ------------------------------------------------------------
+  function buildStartDeck() {
+    const deck = config.startDeck
+    const decks = cu.clusters.filter((c) => c.y >= 200) // cumulus high decks
+    const all = [deck.descent]
+    const G = deck.grid
+    const K = deck.keepClear
+    for (let z = G.z[1]; z >= G.z[0]; z -= G.step[1]) {
+      for (let x = G.x[0]; x <= G.x[1]; x += G.step[0]) {
+        const cx = x + (rng() - 0.5) * 2 * G.jitter * G.step[0]
+        const cz = z + (rng() - 0.5) * 2 * G.jitter * G.step[1]
+        const gap = rng() < G.gap
+        const fwd = K.camZ - cz
+        const inCentre = fwd > K.from - K.margin && Math.abs(cx) < fwd * K.slope + K.margin
+        const onDescent = Math.hypot(cx - deck.descent.x, cz - deck.descent.z) < deck.descentClear
+        if (gap || inCentre || onDescent) continue
+        all.push({ x: cx, z: cz, w: lerpR(rng, deck.cluster.w), puffs: Math.round(lerpR(rng, deck.cluster.puffs)) })
+      }
+    }
+    all.forEach((d, i) => {
+      const tpl = decks[i % decks.length]
+      const c = { x: d.x, y: tpl.y, z: d.z, w: d.w, h: tpl.h }
+      // low tier: the descent cluster keeps 75 % (it must fill the frame),
+      // the rest of the deck 55 %
+      const k0 = scale < 1 ? (i === 0 ? 0.75 : 0.55) : 1
+      const n = Math.max(5, Math.round(d.puffs * k0))
+      for (let k = 0; k < n; k++) cumulusPuff(c, i, LAYER.DECK)
+    })
+  }
 }

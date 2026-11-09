@@ -208,6 +208,17 @@ export default function CloudSystem({ quality }) {
           p.alpha *
           smooth(cuCfg.zRange[0], cuCfg.zRange[0] + 600, zc) *
           (1 - smooth(cuCfg.zRange[1] - 260, cuCfg.zRange[1], zc))
+      } else if (p.layer === LAYER.DECK) {
+        // start deck: anchored to the skydive drop point (no wind), same
+        // gentle breathing as the cumulus; faded out before WORLD
+        px[i] = p.x + Math.sin(time * 0.02 + p.seed * 10) * 3
+        py[i] = p.y + Math.sin(time * 0.04 + p.seed * 30) * 2
+        pz[i] = p.z
+        // zero-size quads once faded out → no fragment cost in WORLD
+        const on = cine.deck > 0.001 ? 1 : 0
+        sx[i] = p.sx * (1 + Math.sin(time * 0.05 + p.seed * 12) * 0.03) * on
+        sy[i] = p.sy * on
+        a[i] = p.alpha * cine.deck
       } else {
         // ---- camera-relative transition cloud body ------------------------
         const st = updateCloudBody(p.cloud, C, P, time, frame)

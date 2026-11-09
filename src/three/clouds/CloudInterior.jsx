@@ -29,6 +29,19 @@ import { getCloudTextures } from './cloudTextures'
  *  interior (and switched off while it is closed) can never show through.
  */
 export const INTERIOR_LOOK = {
+  // Clearing (login success, cine.clear 0 → 1): a clearing level sweeps up
+  // through each sheet's (contrast-stretched) density, so the thinnest vapor
+  // goes first — gaps open all over the frame at once, widen and join, and
+  // the densest knots go last. Front sheet first, back sheet last (depth).
+  // The raw density sits in a narrow band (~0.35–0.65); stretching it makes
+  // the amount of vapor removed per second roughly constant.
+  clearContrast: 3.0, // density stretch around 0.5 for the clearing mask
+  clearSoftness: 0.22, // half-width of the soft clearing edge
+  // linear stage windows (fraction of cine.clear) per sheet: the opaque back
+  // sheet must start early and take most of the time, or the view behind
+  // appears all at once
+  clearStages: [[0.0, 0.55], [0.08, 0.75], [0.15, 1.0]], // front, mid, back
+  riseRates: [1.0, 0.7, 0.45], // upward vapor scroll per sheet (front fastest)
   coverStart: -0.1,
   coverWidth: 0.42,
   holeInner: 0.1,
@@ -47,6 +60,8 @@ const fragment = /* glsl */ `
   uniform sampler2D uVapor;
   uniform float uCover;
   uniform float uOpen;
+  uniform float uClear;
+  uniform float uRise;
   uniform float uPhase;
   uniform float uTime;
   uniform float uAspect;
@@ -60,8 +75,10 @@ const fragment = /* glsl */ `
 
   // One sheet of cloud: Worley billows + fBm vapor, lit with derivative normals.
   // returns rgb = premultiplied colour, a = coverage
-  vec4 sheet(vec2 p, float scale, vec2 drift, float seed, float thresh, float R, float openAmt) {
-    vec2 q = p * scale + drift + seed;
+  // clr  : this sheet's clearing amount (0 = normal, 1 = fully cleared)
+  // rise : upward scroll of the vapor (the camera is falling through it)
+  vec4 sheet(vec2 p, float scale, vec2 drift, float seed, float thresh, float R, float openAmt, float clr, float rise) {
+    vec2 q = (p - vec2(0.0, rise)) * scale + drift + seed;
     vec2 a = texture2D(uVapor, q * 0.16).rg;
     vec2 b = texture2D(uVapor, q * 0.37 + 0.31).rg;
     vec2 c = texture2D(uVapor, q * 0.85 + 0.73).rg;
@@ -79,8 +96,20 @@ const fragment = /* glsl */ `
     col = mix(col, LIT, smoothstep(${f(INTERIOR_LOOK.litRamp[0])}, ${f(INTERIOR_LOOK.litRamp[1])}, lit));
 
     float cov = smoothstep(thresh + ${f(INTERIOR_LOOK.coverStart)}, thresh + ${f(INTERIOR_LOOK.coverStart + INTERIOR_LOOK.coverWidth)}, dens);
-    // tear open from the centre with a billowy edge (front sheets open first);
-    // run in reverse (open 1 → 0) the same edge closes in from the frame edges
+    // clearing: a level sweeps up through the stretched density → thin vapor
+    // disappears first, everywhere at once (no geometry, no centre)
+    if (clr > 0.0) {
+      float dc = (dens - 0.5) * ${f(INTERIOR_LOOK.clearContrast)} + 0.5;
+      // the stretched density can span 0.5 ± 0.5·contrast; the level must
+      // start below and end above that whole range (exactly opaque at
+      // clr→0, exactly empty at clr = 1 — no pop when the layer switches
+      // off), while spending most of the time in the common middle band
+      float x = 2.0 * clr - 1.0;
+      float lvl = 0.5 + x * 0.72 + x * x * x * ${f(0.5 * INTERIOR_LOOK.clearContrast + INTERIOR_LOOK.clearSoftness - 0.72)};
+      cov *= smoothstep(lvl - ${f(INTERIOR_LOOK.clearSoftness)}, lvl + ${f(INTERIOR_LOOK.clearSoftness)}, dc);
+    }
+    // radial hole — used only to CLOSE the bank from the frame edges
+    // (sign-out, open 1 → 0); login success clears by density instead
     float r = length(p * vec2(0.85, 1.15));
     float hole = smoothstep(R - ${f(INTERIOR_LOOK.holeInner)}, R + ${f(INTERIOR_LOOK.holeOuter)}, r + (dens - 0.5) * 0.9);
     cov *= mix(1.0, hole, openAmt);
@@ -93,11 +122,11 @@ const fragment = /* glsl */ `
   // stream outward from the centre, i.e. past the camera) half a cycle apart
   // and cross-fade, so the motion never ends and never pops. The noise seed
   // changes only while a copy is fully faded out.
-  vec4 flowSheet(vec2 p, float scale, vec2 drift, float seed, float thresh, float R, float openAmt, float phase) {
+  vec4 flowSheet(vec2 p, float scale, vec2 drift, float seed, float thresh, float R, float openAmt, float phase, float clr, float rise) {
     float f1 = fract(phase);
     float f2 = fract(phase + 0.5);
-    vec4 a = sheet(p, scale * exp2(-f1), drift, seed + floor(phase) * 7.31, thresh, R, openAmt);
-    vec4 b = sheet(p, scale * exp2(-f2), drift, seed + 3.17 + floor(phase + 0.5) * 7.31, thresh, R, openAmt);
+    vec4 a = sheet(p, scale * exp2(-f1), drift, seed + floor(phase) * 7.31, thresh, R, openAmt, clr, rise);
+    vec4 b = sheet(p, scale * exp2(-f2), drift, seed + 3.17 + floor(phase + 0.5) * 7.31, thresh, R, openAmt, clr, rise);
     float wa = sin(3.14159 * f1);
     float wb = sin(3.14159 * f2);
     return (a * wa + b * wb) / (wa + wb);
@@ -108,12 +137,15 @@ const fragment = /* glsl */ `
     float t = uTime;
     float openAmt = smoothstep(0.0, 0.04, uOpen);
 
-    // back → front; front sheets zoom faster (camera drifting into the bank)
     // back → front; every sheet flows toward the camera at its own rate
     // (nearer sheets faster = parallax). Back sheet: always fully opaque.
-    vec4 back  = flowSheet(p, 1.1, vec2(t * 0.004, t * 0.002), 0.0, -2.0, uOpen * 2.4 - 0.3, openAmt, uPhase * 0.35);
-    vec4 mid   = flowSheet(p, 1.6, vec2(-t * 0.008, t * 0.003), 3.7, 0.46, uOpen * 2.65 - 0.15, openAmt, uPhase * 0.7 + 0.21);
-    vec4 front = flowSheet(p, 2.4, vec2(t * 0.013, -t * 0.005), 7.3, 0.56, uOpen * 3.0 - 0.05, openAmt, uPhase + 0.47);
+    // per-sheet clearing (front first, back last)
+    float cF = clamp((uClear - ${f(INTERIOR_LOOK.clearStages[0][0])}) / ${f(INTERIOR_LOOK.clearStages[0][1] - INTERIOR_LOOK.clearStages[0][0])}, 0.0, 1.0);
+    float cM = clamp((uClear - ${f(INTERIOR_LOOK.clearStages[1][0])}) / ${f(INTERIOR_LOOK.clearStages[1][1] - INTERIOR_LOOK.clearStages[1][0])}, 0.0, 1.0);
+    float cB = clamp((uClear - ${f(INTERIOR_LOOK.clearStages[2][0])}) / ${f(INTERIOR_LOOK.clearStages[2][1] - INTERIOR_LOOK.clearStages[2][0])}, 0.0, 1.0);
+    vec4 back  = flowSheet(p, 1.1, vec2(t * 0.004, t * 0.002), 0.0, -2.0, uOpen * 2.4 - 0.3, openAmt, uPhase * 0.35, cB, uRise * ${f(INTERIOR_LOOK.riseRates[2])});
+    vec4 mid   = flowSheet(p, 1.6, vec2(-t * 0.008, t * 0.003), 3.7, 0.46, uOpen * 2.65 - 0.15, openAmt, uPhase * 0.7 + 0.21, cM, uRise * ${f(INTERIOR_LOOK.riseRates[1])});
+    vec4 front = flowSheet(p, 2.4, vec2(t * 0.013, -t * 0.005), 7.3, 0.56, uOpen * 3.0 - 0.05, openAmt, uPhase + 0.47, cF, uRise * ${f(INTERIOR_LOOK.riseRates[0])});
 
     vec4 acc = back;
     acc = mid + acc * (1.0 - mid.a);
@@ -143,6 +175,8 @@ export default function CloudInterior() {
         uPhase: { value: 0 },
         uCover: { value: 0 },
         uOpen: { value: 0 },
+        uClear: { value: 0 },
+        uRise: { value: 0 },
         uTime: { value: 0 },
         uAspect: { value: 1 },
         uBrightness: { value: 1 },
@@ -158,11 +192,14 @@ export default function CloudInterior() {
     u.uPhase.value += step * (0.03 + cine.push * 0.42)
     u.uCover.value = cine.cover
     u.uOpen.value = cine.open
+    u.uClear.value = cine.clear
+    // upward vapor scroll while falling out of the cloud (accumulated)
+    u.uRise.value += step * cine.rise
     u.uAspect.value = size.width / size.height
     u.uBrightness.value = Math.max(cine.brightness, 0.0)
     // skip the full-screen pass while the layer is absent or its hole lies
     // entirely outside the frame (open ≳ 0.95 → nothing on screen)
-    ref.current.visible = cine.cover > 0.001 && cine.open < 0.985
+    ref.current.visible = cine.cover > 0.001 && cine.open < 0.985 && cine.clear < 0.999
   })
 
   return (

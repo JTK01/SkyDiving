@@ -21,7 +21,7 @@ npm run preview    # 빌드 결과 미리보기
 | `converging` | 스카이다이빙: pitch −0.18→−1.2로 숙이며 낙하 시작(가속), 상층 구름층의 강하 클러스터로 진입하는 순간(2.35s) 구름 내부 레이어로 전환, 로그인은 구름 속에서 아래를 보는 상태 | 3.5s |
 | `login` | 구름 내부 배경 위에 유리 카드 blur→sharp, 필드 순차 등장 | 1.5s |
 | (signup) | 로그인 ⇄ 회원가입 카드 크로스페이드, 배경 유지 | 0.8s |
-| `dissipating` | 구름 안 일정 속도 하강(60 u/s) → 상층 구름층 아래로 빠져나오며 열림 → 감속하며 pitch를 들어 고도 142의 WORLD 포즈로 수평 비행 전환 | 5s |
+| `dissipating` | 구름 안 일정 속도 하강(60 u/s) → 수증기가 화면 전체에서 불규칙하게 옅어짐(얇은 곳부터, 앞 시트 → 뒤 시트, 위로 흘러감) → 틈 사이로 아래 구름바다 → 감속하며 pitch를 들어 고도 142의 WORLD 포즈로 수평 비행 | 5s |
 | `world` | SKY DIVE METAVERSE 메인 월드 + HUD | – |
 | `reconverging` | SIGN OUT 시 구름이 다시 몰려와 로그인으로 복귀 | 2.8s |
 
@@ -75,7 +75,9 @@ src/
 - **시작 화면 = WORLD 레이어 + start deck** — 시작 화면은 WORLD의 sea·cumulus 레이어를 그대로 보여 주고, 그 위에 상층 구름층(`CLOUD_CONFIG.startDeck`)을 깝니다. start deck은 cumulus와 *같은 퍼프 생성 함수*(크기·알파·타일·명암·기울기)로 cumulus 상층 덱(y 270~370)을 템플릿 삼아 지터 격자에 배치하며, 시작 화면 중앙 40% 영역과 강하 지점 주변은 비웁니다. WORLD 진입 전 화면 밖에서 `cine.deck`으로 사라지므로 WORLD는 이전과 동일합니다.
 - **강하 클러스터** — 시작 카메라 바로 아래(x 0, z −60)의 촘촘한 구름. START에서 카메라가 낙하하며 통과하고, 로그인 성공 후 그 아래로 빠져나옵니다.
 - **transition / hero** — 현재 비활성(`transition.enabled: false`). 코드는 남아 있어 다시 켤 수 있습니다.
-- **구름 속(CloudInterior)** — 수증기 시트가 끝없이 확대되며 바깥으로 흘러가는 fly-through(`cine.push` = 속도). 아래를 보며 낙하할 때도 같은 방향으로 흐릅니다.
+- **구름 속(CloudInterior)** — 수증기 시트가 끝없이 확대되며 바깥으로 흘러가는 fly-through(`cine.push` = 속도).
+  - 닫힘(로그아웃): `cine.open` 1→0, 화면 가장자리부터 닫히는 반경 마스크.
+  - 걷힘(로그인 성공): `cine.clear` 0→1, 각 시트의 노이즈 밀도 기준 마스크 — 밀도가 낮은 곳부터 화면 전체에서 동시에 틈이 생기고, 앞 시트가 먼저·뒤 시트가 나중에 걷힘. `cine.rise`로 수증기가 위로 흘러감. 조정 값은 `INTERIOR_LOOK.clear*`, `riseRates`.
 - **튜닝** — `src/three/clouds/cloudLayout.js`의 `CLOUD_CONFIG.startDeck`(강하 클러스터, 격자·간격·빈칸 비율, 중앙 비우기 `keepClear`). `sea`·`cumulus`는 WORLD 구름이므로 시작 화면 때문에 바꾸지 않습니다. 비행 타이밍과 카메라 포즈는 `src/scenes/CloudTransition.js`, `src/state/cinematic.js`의 `CAMERA_POSES`.
 
 ### 질감 조정 상수

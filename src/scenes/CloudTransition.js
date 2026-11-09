@@ -52,24 +52,19 @@ const MIN = 0.4
 
 // The interior's hole is only on screen for open < ~0.95 (beyond that it
 // lies outside the frame corners, even on portrait screens), and the visible
-// sky area grows with the hole radius squared. These eases make the *area*
-// change roughly linearly in time with soft ends, so the sky closes / opens
-// at an even pace instead of the last part snapping shut.
+// sky area grows with the hole radius squared. This ease makes the *area*
+// change roughly linearly in time with soft ends, so the sky closes at an
+// even pace instead of the last part snapping shut (sign-out only).
 const OPEN_VISIBLE = 0.95
 const smooth = (p) => p * p * (3 - 2 * p)
 const closeEase = (p) => 1 - Math.sqrt(Math.max(0, 1 - smooth(p))) // OPEN_VISIBLE → 0
-const openEase = (p) => Math.sqrt(smooth(p)) // 0 → OPEN_VISIBLE
 
 /** close the bank from the frame edges: invisible 1 → 0.95, then visible → 0 */
 const closeBank = (tl, at, duration) =>
   tl
     .to(cine, { open: OPEN_VISIBLE, duration: MIN, ease: 'sine.in' }, at - MIN)
     .to(cine, { open: 0, duration, ease: closeEase }, at)
-/** tear the bank open from the centre: visible 0 → 0.95, then invisible → 1 */
-const openBank = (tl, at, duration) =>
-  tl
-    .to(cine, { open: OPEN_VISIBLE, duration, ease: openEase }, at)
-    .to(cine, { open: 1, duration: MIN, ease: 'sine.out' }, at + duration)
+
 
 // ---------------------------------------------------------------------------
 // Scene 02 — PRESS TO START → skydive: tip over and fall into the deck (3.5 s)
@@ -129,9 +124,11 @@ export function runConvergence() {
 //
 //  0.0 → 0.6  login card fades out (AuthStage) inside the cloud
 //  0.2 → 0.8  the fall resumes (y 300 → 282), reaching ≈60 u/s
-//  0.8 → 1.9  constant fall through the cloud (y 282 → 216, 60 u/s); the
-//             vapor thins (cover) and parts below (open) as the camera drops
+//  0.8 → 1.9  constant fall through the cloud (y 282 → 216, 60 u/s) and
 //             out of the deck's underside (≈y 250, ≈1.4 s)
+//  1.0 → 3.0  the vapor clears unevenly over the whole frame (thin parts
+//             first, front sheet → back sheet), streaming upward; the sea of
+//             clouds below shows through the growing gaps
 //  1.7 → 2.6  the deck — now above, out of view — fades out (cine.deck)
 //  1.9 → 4.4  the fall slows into level flight (y → 142, 60 u/s at 1.9 s)
 //  2.0 → 4.6  the camera pulls up from −1.2 to the world pose (−0.21) while
@@ -149,10 +146,16 @@ export function runDissipation() {
     // pull up & glide forward to the world pose
     .to(cine.cam, { pitch: world.pitch, yaw: world.yaw, fov: world.fov, duration: 2.6, ease: 'sine.inOut' }, 2.0)
     .to(cine.cam, { x: world.x, z: world.z, duration: 2.9, ease: 'sine.inOut' }, 1.9)
-    // vapor thins and parts below the camera
-    .to(cine, { cover: 0, duration: 1.3, ease: 'sine.inOut' }, 1.1)
-  openBank(tl, 1.0, 1.4)
-  tl
+    // the vapor clears unevenly all over the frame — thin parts first, the
+    // front sheet before the back one — while streaming upward past the
+    // falling camera (no radial hole: see CloudInterior, uClear / uRise)
+    .to(cine, { rise: 0.32, duration: 0.6, ease: 'sine.in' }, 0.8)
+    .to(cine, { clear: 1, duration: 2.0, ease: 'sine.inOut' }, 1.0)
+    .to(cine, { rise: 0, duration: 0.6, ease: 'sine.out' }, 3.0)
+    // nothing left of the bank by 3.0 s → disarm it unseen and return to the
+    // resting state (cover 0, open 1, clear 0) while it is invisible
+    .to(cine, { cover: 0, duration: MIN, ease: 'sine.inOut' }, 3.05)
+    .to(cine, { open: 1, clear: 0, duration: MIN, ease: 'sine.inOut' }, 3.5)
     .to(cine, { deck: 0, duration: 0.9, ease: 'sine.inOut' }, 1.7)
     .to(cine, { push: 0, duration: 1.2, ease: 'sine.out' }, 2.2)
     .to(cine, { brightness: 1.04, duration: 1.5, ease: 'sine.out' }, 0.8)

@@ -31,6 +31,10 @@ export const cine = {
   // the frame → layer invisible even when cover changes); 1 → 0 closes the
   // bank in from the edges, 0 → 1 tears it open from the centre
   open: 1,
+  // login success clears the bank by density instead (thin vapor first, all
+  // over the frame); 0 = normal, 1 = nothing left. Resting state 0.
+  clear: 0,
+  rise: 0, // upward scroll speed of the interior vapor (falling through it)
   // fly-through speed inside the cloud: how fast the interior vapor streams
   // past the camera (0 = still, ~0.25 = gentle drift, 1+ = rushing through)
   push: 0,
@@ -79,8 +83,9 @@ anchorCloudsTo(CAMERA_POSES.intro)
 /**
  * True while the cloud-interior layer is fully closed and opaque (its back
  * sheet has no gaps), so the 3D layers behind it can be skipped for free.
- * Requires open ≈ 0 as well: any opening would reveal what is behind.
+ * Requires open ≈ 0 and clear ≈ 0 as well: any opening or clearing would
+ * reveal what is behind.
  */
-export const isBankClosed = () => cine.cover > 0.999 && cine.open < 0.001
+export const isBankClosed = () => cine.cover > 0.999 && cine.open < 0.001 && cine.clear < 0.001
 
 export const SUN_DIRECTION = new THREE.Vector3(0.42, 0.3, -1).normalize()

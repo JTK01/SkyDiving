@@ -1,7 +1,7 @@
 import { useMemo, useRef } from 'react'
 import { useFrame, useThree } from '@react-three/fiber'
 import * as THREE from 'three'
-import { cine, SUN_DIRECTION } from '../../state/cinematic'
+import { cine, isBankClosed, SUN_DIRECTION } from '../../state/cinematic'
 import { getCloudTextures } from './cloudTextures'
 import { CLOUD_COLORS } from './CloudSystem'
 
@@ -94,7 +94,7 @@ export default function CloudFloor() {
     u.uFog.value = cine.cloudFog
     u.uBrightness.value = cine.brightness
     ref.current.position.set(camera.position.x, -6, camera.position.z)
-    ref.current.visible = !(cine.cover > 0.995 && cine.open < 0.001)
+    ref.current.visible = !isBankClosed()
   })
 
   return (

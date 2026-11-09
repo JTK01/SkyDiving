@@ -50,12 +50,16 @@ export default function IntroScene() {
 
   useEffect(() => {
     if (phase !== PHASES.CONVERGING) return
+    // The UI leaves *with* the clouds, not before them: the fades are long
+    // ease-in curves that stay mostly opaque while the sky is still open and
+    // finish as the vapor closes over the centre of the frame (≈3.0 s; see
+    // runConvergence). Fading out over bare sky left ~1 s of empty frames.
     const tl = gsap.timeline()
-    tl.to(title.current, { autoAlpha: 0, y: -8, filter: `blur(8px) ${TITLE_LIFT}`, duration: 0.9, ease: 'power2.in' }, 0.05)
-      .to(sub.current, { autoAlpha: 0, y: -8, filter: 'blur(8px)', duration: 0.9, ease: 'power2.in' }, 0.05)
-      .to(button.current, { autoAlpha: 0, y: 6, duration: 0.6, ease: 'power2.in' }, 0.12)
-      .to(meta.current, { autoAlpha: 0, duration: 0.6 }, 0)
-      .to(halo.current, { autoAlpha: 0, duration: 0.9, ease: 'sine.in' }, 0.1)
+    tl.to(title.current, { autoAlpha: 0, y: -10, filter: `blur(10px) ${TITLE_LIFT}`, duration: 2.4, ease: 'power2.in' }, 0.55)
+      .to(sub.current, { autoAlpha: 0, y: -8, filter: 'blur(8px)', duration: 2.2, ease: 'power2.in' }, 0.55)
+      .to(button.current, { autoAlpha: 0, y: 6, duration: 2.1, ease: 'power2.in' }, 0.3)
+      .to(meta.current, { autoAlpha: 0, duration: 1.4, ease: 'sine.inOut' }, 0.2)
+      .to(halo.current, { autoAlpha: 0, duration: 2.2, ease: 'sine.in' }, 0.6)
     return () => tl.kill()
   }, [phase])
 

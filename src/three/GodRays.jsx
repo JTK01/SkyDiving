@@ -1,7 +1,7 @@
 import { useMemo, useRef } from 'react'
 import { useFrame, useThree } from '@react-three/fiber'
 import * as THREE from 'three'
-import { cine, SUN_DIRECTION } from '../state/cinematic'
+import { cine, isBankClosed, SUN_DIRECTION } from '../state/cinematic'
 import { getCloudTextures } from './clouds/cloudTextures'
 
 /**
@@ -74,7 +74,7 @@ export default function GodRays() {
     const facing = camera.getWorldDirection(fwd).dot(SUN_DIRECTION)
     const vis = THREE.MathUtils.smoothstep(facing, -0.1, 0.45)
     u.uIntensity.value = cine.rays * vis * cine.brightness
-    const covered = cine.cover > 0.995 && cine.open < 0.001
+    const covered = isBankClosed()
     ref.current.visible = u.uIntensity.value > 0.002 && !covered
   })
 

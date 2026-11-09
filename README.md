@@ -79,6 +79,19 @@ src/
   - 흩어질 때는 위·좌우로 이동하며 화면 밖으로 나간 뒤에만 사라짐(갑작스러운 투명화 없음)
 - **튜닝** — `src/three/clouds/cloudLayout.js`의 `CLOUD_CONFIG.transition.layers`에서 레이어별 개수, 링(위치), 깊이, 크기, 접근량(`approach`), 수렴 정도(`pull`), 속도/지연, 곡률(`curl`), 회전(`spin`)을 조절합니다. 타이밍은 `src/scenes/CloudTransition.js`.
 
+### 질감 조정 상수
+
+- `src/three/clouds/cloudShader.js` → `CLOUD_LOOK`: 가장자리 침식(`edgeErosion`), 노이즈 옥타브 비중(`edgeWeights`, 고주파는 작게), 경계 투명 램프(`bodyStart`/`bodyEnd`), 명암 램프(`shadeRamp`/`litRamp`), 측면광·요철 강도
+- `src/three/clouds/CloudInterior.jsx` → `INTERIOR_LOOK`: 시트 coverage 램프, 열림/닫힘 가장자리 폭, 명암 램프
+
+### 전환 규칙 (`src/scenes/CloudTransition.js`)
+
+- `.set` / 0.4초 미만 tween 없음 — 모든 변화는 easing tween
+- 구름 내부 레이어는 균일 페이드하지 않음: 휴지 상태는 `cover 0, open 1`(구멍이 화면 밖 → 보이지 않음). `open` 1→0으로 가장자리부터 닫히고, 0→1로 중앙부터 열림(`closeBank` / `openBank`, 보이는 하늘 면적이 시간에 거의 선형으로 변하는 ease)
+- 카메라 위치·fog 변경은 구름이 완전히 닫힌 뒤에만(`isBankClosed()`)
+- 3D 레이어는 `isBankClosed()`일 때만 끄며, 이때 interior의 뒷 시트는 항상 불투명하므로 화면에 변화가 없음
+- UI 페이드(인트로 타이틀/버튼, HUD)는 구름이 덮는 구간과 겹치도록 길게
+
 ### 렌더링
 
 - **실루엣** — `cloudTextures.js`가 적운 몸체(부드러운 밀도 돔)를 절차적으로 생성한 아틀라스.
@@ -96,7 +109,7 @@ src/
 
 ## 디버그
 
-`?debug`를 붙여 열면 `window.__skydive`(`gsap`, `cine`, `getActiveTimeline`)가 노출됩니다. 예: 콘솔에서 `__skydive.getActiveTimeline().pause().seek(1.5)`로 전환 장면의 특정 시점을 멈춰 볼 수 있습니다.
+`?debug`를 붙여 열면 `window.__skydive`(`gsap`, `cine`, `getActiveTimeline`, `cloudMs` = 구름 갱신 CPU 시간)가 노출됩니다. 예: 콘솔에서 `__skydive.getActiveTimeline().pause().seek(1.5)`로 전환 장면의 특정 시점을 멈춰 볼 수 있습니다.
 
 ## 실제 인증 백엔드 연결
 

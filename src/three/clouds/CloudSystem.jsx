@@ -1,7 +1,7 @@
 import { useMemo, useRef } from 'react'
 import { useFrame, useThree } from '@react-three/fiber'
 import * as THREE from 'three'
-import { cine, SUN_DIRECTION } from '../../state/cinematic'
+import { cine, isBankClosed, SUN_DIRECTION } from '../../state/cinematic'
 import { buildPuffs, CLOUD_CONFIG, LAYER } from './cloudLayout'
 import { cloudVertex, cloudFragment } from './cloudShader'
 import { getCloudTextures } from './cloudTextures'
@@ -147,13 +147,14 @@ export default function CloudSystem({ quality }) {
   useFrame((_, rawDt) => {
     const mesh = meshRef.current
     if (!mesh) return
+    const t0 = performance.now()
     const dt = Math.min(rawDt, 0.1)
     const u = material.uniforms
     u.uTime.value += dt
     cine.windOffset += cine.wind * dt
 
     // Fully hidden behind the cloud interior layer → skip all work.
-    const hidden = cine.cover > 0.995 && cine.open < 0.001
+    const hidden = isBankClosed()
     mesh.visible = !hidden
     if (hidden) return
 
@@ -260,6 +261,8 @@ export default function CloudSystem({ quality }) {
     buffers.iPos.needsUpdate = true
     buffers.iData.needsUpdate = true
     buffers.iExtra.needsUpdate = true
+    // ?debug: CPU cost of the per-frame cloud update (positions + depth sort)
+    if (window.__skydive) window.__skydive.cloudMs = performance.now() - t0
   })
 
   return <mesh ref={meshRef} geometry={geometry} material={material} frustumCulled={false} renderOrder={2} />

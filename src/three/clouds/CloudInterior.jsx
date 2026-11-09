@@ -9,11 +9,32 @@ import { getCloudTextures } from './cloudTextures'
  * (Worley billows + fBm) lit with derivative normals, so the login backdrop
  * reads as real cloud depth rather than a flat noise texture.
  *
- * Fills the frame once the converging puffs have closed the gaps (cover → 1)
- * and stays as the living, slowly billowing backdrop behind the login UI.
- * On login success the layer tears open from the centre (open → 1) with a
- * noisy, cloud-shaped edge while the puffs behind it scatter outward.
+ * The bank is driven by two values:
+ *  cover : overall strength (0 = absent, 1 = full)
+ *  open  : radius of a billowy hole from the centre (1 = hole fills the frame)
+ * Convergence runs open 1 → 0, so vapor closes in from the frame edges over
+ * the converging puffs; login success runs open 0 → 1, tearing the bank open
+ * from the centre. Changing cover while open = 1 is invisible, which lets the
+ * director arm / disarm the layer without any visible fade.
  */
+/**
+ * Look controls (baked into the shader as constants).
+ *  coverStart/coverWidth : sheet coverage ramp relative to each sheet's
+ *    threshold — wider = softer, rounder vapor edges (was 0 / 0.2)
+ *  holeSoftness : width of the torn edge while the bank opens / closes
+ *  back sheet is always fully opaque, so whatever is drawn behind the
+ *  interior (and switched off while it is closed) can never show through.
+ */
+export const INTERIOR_LOOK = {
+  coverStart: -0.1,
+  coverWidth: 0.42,
+  holeInner: 0.1,
+  holeOuter: 0.42,
+  shadeRamp: [-0.1, 0.6],
+  litRamp: [0.3, 1.05],
+}
+const f = (v) => Number(v).toFixed(4)
+
 const vertex = /* glsl */ `
   varying vec2 vUv;
   void main() { vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }
@@ -51,13 +72,14 @@ const fragment = /* glsl */ `
     vec2 g = vec2(dFdx(hgt), dFdy(hgt)) / pl;
     vec3 n = normalize(vec3(-g * 0.03 / scale, 1.0));
     float lit = clamp(0.52 + dot(n.xy, SUN) * 0.55 + (dens - 0.5) * 0.6 + p.y * 0.15, 0.0, 1.0);
-    vec3 col = mix(DEEP, SHADE, smoothstep(0.0, 0.45, lit));
-    col = mix(col, LIT, smoothstep(0.4, 0.95, lit));
+    vec3 col = mix(DEEP, SHADE, smoothstep(${f(INTERIOR_LOOK.shadeRamp[0])}, ${f(INTERIOR_LOOK.shadeRamp[1])}, lit));
+    col = mix(col, LIT, smoothstep(${f(INTERIOR_LOOK.litRamp[0])}, ${f(INTERIOR_LOOK.litRamp[1])}, lit));
 
-    float cov = smoothstep(thresh, thresh + 0.2, dens);
-    // tear open from the centre with a billowy edge (front sheets open first)
+    float cov = smoothstep(thresh + ${f(INTERIOR_LOOK.coverStart)}, thresh + ${f(INTERIOR_LOOK.coverStart + INTERIOR_LOOK.coverWidth)}, dens);
+    // tear open from the centre with a billowy edge (front sheets open first);
+    // run in reverse (open 1 → 0) the same edge closes in from the frame edges
     float r = length(p * vec2(0.85, 1.15));
-    float hole = smoothstep(R - 0.02, R + 0.3, r + (dens - 0.5) * 0.9);
+    float hole = smoothstep(R - ${f(INTERIOR_LOOK.holeInner)}, R + ${f(INTERIOR_LOOK.holeOuter)}, r + (dens - 0.5) * 0.9);
     cov *= mix(1.0, hole, openAmt);
     // thin torn edges catch the sun
     col += vec3(1.0, 0.93, 0.8) * (1.0 - smoothstep(0.0, 0.25, abs(r + (dens - 0.5) * 0.9 - R - 0.12))) * openAmt * 0.12;
@@ -71,9 +93,10 @@ const fragment = /* glsl */ `
     float openAmt = smoothstep(0.0, 0.04, uOpen);
 
     // back → front; front sheets zoom faster (camera drifting into the bank)
-    vec4 back  = sheet(p, 1.1 / (1.0 + push * 0.25), vec2(t * 0.004, t * 0.002), 0.0, 0.0, uOpen * 2.3 - 0.25, openAmt);
-    vec4 mid   = sheet(p, 1.6 / (1.0 + push * 0.5), vec2(-t * 0.008, t * 0.003), 3.7, 0.46, uOpen * 2.55 - 0.12, openAmt);
-    vec4 front = sheet(p, 2.4 / (1.0 + push * 0.9), vec2(t * 0.013, -t * 0.005), 7.3, 0.56, uOpen * 2.9, openAmt);
+    // back sheet: threshold far below any density → always fully opaque
+    vec4 back  = sheet(p, 1.1 / (1.0 + push * 0.25), vec2(t * 0.004, t * 0.002), 0.0, -2.0, uOpen * 2.4 - 0.3, openAmt);
+    vec4 mid   = sheet(p, 1.6 / (1.0 + push * 0.5), vec2(-t * 0.008, t * 0.003), 3.7, 0.46, uOpen * 2.65 - 0.15, openAmt);
+    vec4 front = sheet(p, 2.4 / (1.0 + push * 0.9), vec2(t * 0.013, -t * 0.005), 7.3, 0.56, uOpen * 3.0 - 0.05, openAmt);
 
     vec4 acc = back;
     acc = mid + acc * (1.0 - mid.a);
@@ -118,7 +141,9 @@ export default function CloudInterior() {
     u.uPush.value = cine.push
     u.uAspect.value = size.width / size.height
     u.uBrightness.value = Math.max(cine.brightness, 0.0)
-    ref.current.visible = cine.cover > 0.001
+    // skip the full-screen pass while the layer is absent or its hole lies
+    // entirely outside the frame (open ≳ 0.95 → nothing on screen)
+    ref.current.visible = cine.cover > 0.001 && cine.open < 0.985
   })
 
   return (

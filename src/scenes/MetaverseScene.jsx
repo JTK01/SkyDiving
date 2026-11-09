@@ -41,7 +41,8 @@ export default function MetaverseScene() {
   }, [phase])
 
   useEffect(() => {
-    if (phase === PHASES.RECONVERGING) gsap.to(root.current, { autoAlpha: 0, duration: 0.6 })
+    // fade together with the clouds rolling back in (runReconvergence 0.4–1.6 s)
+    if (phase === PHASES.RECONVERGING) gsap.to(root.current, { autoAlpha: 0, duration: 1.2, delay: 0.4, ease: 'sine.inOut' })
   }, [phase])
 
   const onSignOut = async () => {

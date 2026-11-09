@@ -24,7 +24,10 @@ export const cine = {
   disperse: 0, // 0 = packed, 1 = scattered up / sideways past the screen edges
   densityBoost: 1, // >1 grows size & opacity of the transition clouds
   cover: 0, // full-screen "inside the cloud" layer coverage
-  open: 0, // radial opening of the interior layer (cloud parting)
+  // radial opening of the interior layer. Resting state is 1 (hole fills
+  // the frame → layer invisible even when cover changes); 1 → 0 closes the
+  // bank in from the edges, 0 → 1 tears it open from the centre
+  open: 1,
   push: 0, // how far the camera has drifted into the cloud interior
 
   // ---- atmosphere ------------------------------------------------------
@@ -49,5 +52,12 @@ export const cine = {
   // pointer, normalised -1..1 (for parallax)
   pointer: { x: 0, y: 0 },
 }
+
+/**
+ * True while the cloud-interior layer is fully closed and opaque (its back
+ * sheet has no gaps), so the 3D layers behind it can be skipped for free.
+ * Requires open ≈ 0 as well: any opening would reveal what is behind.
+ */
+export const isBankClosed = () => cine.cover > 0.999 && cine.open < 0.001
 
 export const SUN_DIRECTION = new THREE.Vector3(0.42, 0.3, -1).normalize()

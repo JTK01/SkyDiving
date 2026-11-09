@@ -60,22 +60,22 @@ export const CLOUD_CONFIG = {
         clouds: 16, puffs: [3, 5], ring: [0.86, 1.4], depth: [190, 290], size: [0.2, 0.34],
         pull: [0.5, 0.78], approach: [0.72, 0.85], speed: [0.85, 1.0], delay: [0.0, 0.12],
         curl: 0.12, spin: 0.06, alpha: [0.82, 0.95],
-        disperse: { ring: [2.0, 2.8], approach: 0.95, speed: [0.75, 0.9], delay: [0.12, 0.25] },
+        disperse: { ring: [2.0, 2.8], approach: 0.95, speed: [0.72, 0.95], delay: [0.1, 0.36] },
       },
       midground: {
         clouds: 22, puffs: [4, 6], ring: [0.86, 1.35], depth: [80, 135], size: [0.3, 0.48],
         pull: [0.15, 0.6], approach: [0.45, 0.6], speed: [1.0, 1.2], delay: [0.0, 0.16],
         curl: 0.22, spin: 0.12, alpha: [0.95, 1],
-        disperse: { ring: [2.7, 3.6], approach: 0.75, speed: [0.95, 1.15], delay: [0.04, 0.16] },
+        disperse: { ring: [2.7, 3.6], approach: 0.75, speed: [0.85, 1.25], delay: [0.0, 0.3] },
       },
       foreground: {
         clouds: 7, puffs: [3, 4], ring: [1.0, 1.4], depth: [30, 46], size: [0.38, 0.55],
         pull: [0.4, 0.7], approach: [0.55, 0.68], speed: [1.25, 1.45], delay: [0.3, 0.42],
         curl: 0.3, spin: 0.16, alpha: [0.97, 1],
-        disperse: { ring: [3.2, 4.2], approach: 0.6, speed: [1.1, 1.3], delay: [0.0, 0.06] },
+        disperse: { ring: [3.2, 4.2], approach: 0.7, speed: [1.05, 1.35], delay: [0.0, 0.12] },
       },
     },
-    upBias: 0.5, // scatter direction: up & sideways, never straight down
+    upBias: 0.22, // scatter direction: mostly sideways & up, never straight down
     tiles: [0, 1, 2, 0, 1],
   },
 }

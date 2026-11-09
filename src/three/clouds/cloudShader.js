@@ -6,17 +6,43 @@
  * pixel from tiling Worley + fBm noise, so the edge detail stays sharp no
  * matter how close the camera gets (no magnified, blurry texels):
  *
- *  - Worley billows erode the boundary into small rounded protrusions,
- *    fBm adds wispy vapor; erosion is strongest at the edges so the core
- *    stays solid and the outline crisp-but-soft.
- *  - Surface normals come from screen-space derivatives of a height field
- *    (base shape + billows) → every bump is lit from the sun side and
- *    shaded grey-blue on the other, which kills the flat "plastic" look.
+ *  - Large/medium Worley billows round off the boundary, fBm adds wispy
+ *    vapor; the body opacity ramps over a wide band so edges melt softly
+ *    into the sky (see CLOUD_LOOK below).
+ *  - Surface normals come from finite differences of the silhouette density
+ *    → lit from the sun side, shaded grey-blue on the other, with gentle
+ *    colour ramps so light and shade blend rather than band.
  *  - Self-shadowing from the density toward the sun, underside darkening,
  *    silver lining on thin backlit vapor and aerial perspective.
  *
  * Output is premultiplied alpha; instances are depth-sorted on the CPU.
  */
+
+/**
+ * Look controls — tweak these to change how soft / puffy the clouds read.
+ * They are baked into the shader source as constants (no per-frame cost).
+ */
+export const CLOUD_LOOK = {
+  // edge erosion: how much the noise eats into the silhouette near the edge.
+  // Lower = rounder, softer outline (was 0.95 / 0.55 → crisp, knobbly edge)
+  edgeErosion: 0.55,
+  edgeErosionCore: 0.35, // erosion removed toward the dense core
+  // weight of each noise octave in the edge detail (low → high frequency).
+  // The high-frequency Worley octave (v3) made the rim look hard & bumpy.
+  edgeWeights: [0.48, 0.38, 0.09, 0.05], // v1.g, v2.g, v3.g, v3.r
+  // body opacity ramp over the eroded density: a wide ramp lets the cloud
+  // fade gradually into the sky instead of ending on a hard line (was 0.06–0.2)
+  bodyStart: 0.02,
+  bodyEnd: 0.46,
+  fringeStrength: 0.36, // thin vapor halo outside the body
+  // light → shade colour ramps (was 0.0–0.42 and 0.38–0.92: too contrasty)
+  shadeRamp: [-0.15, 0.6], // deep → shadow
+  litRamp: [0.22, 1.05], // shadow → lit
+  sideLight: 0.32, // directional modelling from the sun side (was 0.4)
+  relief: 0.22, // billow crown/crease contrast (was ~0.4, high-frequency)
+}
+
+const f = (v) => Number(v).toFixed(4)
 
 export const cloudVertex = /* glsl */ `
   attribute vec3 iPos;
@@ -105,12 +131,13 @@ export const cloudFragment = /* glsl */ `
     vec2 v3 = texture2D(uVapor, q * 3.1 + drift * 2.2 + 0.71).rg;
     float billow = v1.g * 0.5 + v2.g * 0.33 + v3.g * 0.17;
     float wisp = v1.r * 0.5 + v2.r * 0.3 + v3.r * 0.2;
-    // the boundary is carved mostly by the small Worley cells → many little
-    // rounded protrusions instead of a smooth, wobbly outline
-    float edgeDetail = v1.g * 0.2 + v2.g * 0.35 + v3.g * 0.3 + v3.r * 0.15;
+    // the boundary is carved mostly by the large / medium Worley cells →
+    // big soft rounded lobes ("몽글몽글"), very little high-frequency grit
+    float edgeDetail = v1.g * ${f(CLOUD_LOOK.edgeWeights[0])} + v2.g * ${f(CLOUD_LOOK.edgeWeights[1])}
+                     + v3.g * ${f(CLOUD_LOOK.edgeWeights[2])} + v3.r * ${f(CLOUD_LOOK.edgeWeights[3])};
 
-    // erode the boundary much more than the core → solid body, broken edge
-    float dens = clamp(base * 1.55 - (1.0 - edgeDetail) * (0.95 - base * 0.55), 0.0, 1.0);
+    // erode the boundary more than the core → soft, rounded billowing edge
+    float dens = clamp(base * 1.45 - (1.0 - edgeDetail) * (${f(CLOUD_LOOK.edgeErosion)} - base * ${f(CLOUD_LOOK.edgeErosionCore)}), 0.0, 1.0);
 
     // --- lighting --------------------------------------------------------
     // Normal from finite differences of the silhouette density. (Screen-space
@@ -134,11 +161,11 @@ export const cloudFragment = /* glsl */ `
     float absorb = clamp((sampleD(uv + sun2 * 0.08) - base) * 1.8, 0.0, 1.0);
 
     // billow relief: brighter crowns, grey-blue creases between cells
-    float relief = (v1.g - 0.5) * 0.2 + (v2.g - 0.5) * 0.3 + (v3.g - 0.5) * 0.22;
-    float lit = vLight * 0.5 + 0.28 + side * 0.4 - absorb * 0.4 + cc.y * 0.1 - dens * 0.05 + relief;
+    float relief = ((v1.g - 0.5) * 0.55 + (v2.g - 0.5) * 0.35 + (v3.g - 0.5) * 0.1) * ${f(CLOUD_LOOK.relief)} * 2.0;
+    float lit = vLight * 0.5 + 0.3 + side * ${f(CLOUD_LOOK.sideLight)} - absorb * 0.35 + cc.y * 0.1 - dens * 0.04 + relief;
     lit = clamp(lit, 0.0, 1.0);
-    vec3 col = mix(uDeep, uShadow, smoothstep(0.0, 0.42, lit));
-    col = mix(col, uLit, smoothstep(0.38, 0.92, lit));
+    vec3 col = mix(uDeep, uShadow, smoothstep(${f(CLOUD_LOOK.shadeRamp[0])}, ${f(CLOUD_LOOK.shadeRamp[1])}, lit));
+    col = mix(col, uLit, smoothstep(${f(CLOUD_LOOK.litRamp[0])}, ${f(CLOUD_LOOK.litRamp[1])}, lit));
 
     // flat, darker cumulus bases
     col *= mix(1.0 - 0.2 * vShade, 1.0, smoothstep(-0.75, 0.2, cc.y));
@@ -146,17 +173,17 @@ export const cloudFragment = /* glsl */ `
     // silver lining on thin, backlit vapor + rim catching the sun
     vec3 viewDir = normalize(vViewPos);
     float fs = pow(max(dot(viewDir, uSunView), 0.0), 5.0);
-    float thin = 1.0 - smoothstep(0.03, 0.3, dens);
+    float thin = 1.0 - smoothstep(0.03, 0.4, dens);
     col += uSunColor * (fs * (thin * 0.45 + 0.08) + thin * 0.07 * max(side, 0.0));
 
     col *= uBrightness;
     float f = 1.0 - exp(-vDist * uFog);
     col = mix(col, uHaze * uBrightness, f);
 
-    // opaque body with a crisp-but-soft outline, plus a thin translucent
-    // vapor fringe just outside it (water vapour, not a cut-out sticker)
-    float body = smoothstep(0.06, 0.2, dens);
-    float fringe = smoothstep(0.04, 0.45, base) * smoothstep(0.38, 0.78, wisp) * 0.32;
+    // body fades gradually toward its edge, plus a thin translucent vapor
+    // fringe just outside it (water vapour, not a cut-out sticker)
+    float body = smoothstep(${f(CLOUD_LOOK.bodyStart)}, ${f(CLOUD_LOOK.bodyEnd)}, dens);
+    float fringe = smoothstep(0.04, 0.45, base) * smoothstep(0.38, 0.78, wisp) * ${f(CLOUD_LOOK.fringeStrength)};
     float a = max(body, fringe) * vAlpha;
     a *= smoothstep(1.5, 9.0, vDist);       // soft fade when flying through
     if (a < 0.004) discard;

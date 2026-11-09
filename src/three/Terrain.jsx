@@ -1,7 +1,7 @@
 import { useMemo, useRef } from 'react'
 import { useFrame, useThree } from '@react-three/fiber'
 import * as THREE from 'three'
-import { cine, SUN_DIRECTION } from '../state/cinematic'
+import { cine, isBankClosed, SUN_DIRECTION } from '../state/cinematic'
 
 /**
  * Snow-capped peaks piercing the sea of clouds in the distance.
@@ -102,7 +102,7 @@ export default function Terrain({ quality }) {
   useFrame(() => {
     fog.density = cine.terrainFog
     fog.color.setRGB(0.74 * cine.brightness, 0.8 * cine.brightness, 0.87 * cine.brightness, THREE.SRGBColorSpace)
-    if (fogRef.current) fogRef.current.visible = !(cine.cover > 0.995 && cine.open < 0.001)
+    if (fogRef.current) fogRef.current.visible = !isBankClosed()
   })
 
   const sunPos = useMemo(() => SUN_DIRECTION.clone().multiplyScalar(1000), [])

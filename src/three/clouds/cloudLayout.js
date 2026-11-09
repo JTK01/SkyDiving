@@ -4,8 +4,9 @@
  * Three layers share one instanced, depth-sorted draw call:
  *  - sea        : the endless sea of clouds below the camera
  *  - cumulus    : towering cumulus clusters in the distance
- *  - transition : camera-relative clouds that frame the screen in the intro,
- *                 converge into the centre on START and scatter on login.
+ *  - transition : camera-relative cloud bodies on foreground / midground /
+ *                 background layers that frame the intro, drift toward the
+ *                 centre on START and scatter on login (parallax by depth).
  *
  * Every value that shapes the look (position, size, density, direction) lives
  * in CLOUD_CONFIG so the art direction can be tuned without touching code.
@@ -17,9 +18,9 @@ export const CLOUD_CONFIG = {
     x: [-2000, 2000],
     z: [-2700, 320],
     y: [0, 26],
-    size: [110, 260],
+    size: [120, 240],
     flatten: 0.42, // height / width
-    alpha: [0.6, 0.9],
+    alpha: [0.75, 0.95],
     shade: 1, // underside darkening
     tiles: [0, 0, 3, 1, 2],
   },
@@ -28,25 +29,54 @@ export const CLOUD_CONFIG = {
       { x: -560, y: 20, z: -820, w: 220, h: 300, puffs: 46 },
       { x: 620, y: 10, z: -1150, w: 280, h: 380, puffs: 52 },
       { x: -1250, y: 0, z: -1500, w: 320, h: 340, puffs: 44 },
-      { x: 1400, y: 0, z: -700, w: 240, h: 260, puffs: 36 },
+      { x: 1400, y: 0, z: -760, w: 240, h: 260, puffs: 36 },
       { x: 120, y: 0, z: -1950, w: 380, h: 400, puffs: 46 },
       { x: -260, y: 270, z: -1300, w: 420, h: 70, puffs: 22 }, // high drifting deck
       { x: 760, y: 310, z: -1650, w: 460, h: 60, puffs: 20 },
     ],
-    size: [130, 230],
-    alpha: [0.6, 0.88],
+    size: [160, 260],
+    alpha: [0.75, 0.95],
     shade: 0.9,
     tiles: [1, 0, 1, 2],
-    zRange: [-2700, 650], // wrap range when streaming with the wind
+    // wrap range when streaming with the wind — ends well in front of the
+    // camera (intro z≈60, world z≈-140) so towers never engulf the view
+    zRange: [-2900, -380],
   },
+  /**
+   * Camera-relative transition clouds, built as individual cloud *bodies*
+   * (several puffs each) on three depth layers. Positions are normalised
+   * screen coordinates (1 = screen edge) at the cloud's depth; sizes are a
+   * fraction of the screen height at the *rest* depth and then stay fixed in
+   * world units, so approaching the camera grows them by real perspective.
+   *
+   *  pull     : how far toward the centre a cloud travels (0 = to the centre)
+   *  approach : depth multiplier when converged (camera "enters" the bank)
+   *  speed    : >1 finishes earlier; delay: start offset (0..1 of the timeline)
+   */
   transition: {
-    count: 74,
-    // normalised screen space: 1 = screen edge
-    rest: { ring: [0.9, 1.55], depth: [40, 150], size: [0.6, 1.1], alpha: [0.5, 0.8] },
-    converge: { ring: [0.0, 0.55], depth: [10, 36], size: [0.95, 1.75], swirl: 0.55 },
-    disperse: { ring: [2.3, 3.4], upBias: 0.45, depthPull: [4, 40], fade: 0.75 },
     shade: 0.55,
-    tiles: [2, 0, 2, 1, 3],
+    layers: {
+      background: {
+        clouds: 16, puffs: [3, 5], ring: [0.86, 1.4], depth: [190, 290], size: [0.2, 0.34],
+        pull: [0.5, 0.78], approach: [0.72, 0.85], speed: [0.85, 1.0], delay: [0.0, 0.12],
+        curl: 0.12, spin: 0.06, alpha: [0.82, 0.95],
+        disperse: { ring: [2.0, 2.8], approach: 0.95, speed: [0.75, 0.9], delay: [0.12, 0.25] },
+      },
+      midground: {
+        clouds: 22, puffs: [4, 6], ring: [0.86, 1.35], depth: [80, 135], size: [0.3, 0.48],
+        pull: [0.15, 0.6], approach: [0.45, 0.6], speed: [1.0, 1.2], delay: [0.0, 0.16],
+        curl: 0.22, spin: 0.12, alpha: [0.95, 1],
+        disperse: { ring: [2.7, 3.6], approach: 0.75, speed: [0.95, 1.15], delay: [0.04, 0.16] },
+      },
+      foreground: {
+        clouds: 7, puffs: [3, 4], ring: [1.0, 1.4], depth: [30, 46], size: [0.38, 0.55],
+        pull: [0.4, 0.7], approach: [0.55, 0.68], speed: [1.25, 1.45], delay: [0.3, 0.42],
+        curl: 0.3, spin: 0.16, alpha: [0.97, 1],
+        disperse: { ring: [3.2, 4.2], approach: 0.6, speed: [1.1, 1.3], delay: [0.0, 0.06] },
+      },
+    },
+    upBias: 0.5, // scatter direction: up & sideways, never straight down
+    tiles: [0, 1, 2, 0, 1],
   },
 }
 
@@ -126,44 +156,87 @@ export function buildPuffs(scale = 1, config = CLOUD_CONFIG) {
 
   // --- camera-relative transition clouds -------------------------------
   const tr = config.transition
-  const trCount = Math.round(tr.count * (scale < 1 ? 0.6 : 1))
-  for (let i = 0; i < trCount; i++) {
-    const theta = (i / trCount) * Math.PI * 2 + rng() * 0.4
-    const rRest = lerpR(rng, tr.rest.ring)
-    const rConv = Math.sqrt(rng()) * tr.converge.ring[1]
-    const convTheta = theta + (rng() - 0.5) * 1.2
+  const layerScale = scale < 1 ? 0.6 : 1
+  Object.entries(tr.layers).forEach(([name, L]) => {
+    const n = Math.max(3, Math.round(L.clouds * layerScale))
+    for (let i = 0; i < n; i++) {
+      // spread around the frame; slight upward bias keeps the title area clear
+      const theta = (i / n) * Math.PI * 2 + (rng() - 0.5) * 0.9
+      const rRest = lerpR(rng, L.ring)
+      const rest = { x: Math.cos(theta) * rRest, y: Math.sin(theta) * rRest * 0.95, d: lerpR(rng, L.depth) }
 
-    // scatter direction: outward, biased upward & sideways (never straight down)
-    let dx = Math.cos(theta)
-    let dy = Math.sin(theta)
-    if (dy < 0) dy *= 0.25
-    dy += tr.disperse.upBias
-    const dl = Math.hypot(dx, dy) || 1
-    const rDisp = lerpR(rng, tr.disperse.ring)
+      const pull = lerpR(rng, L.pull)
+      const conv = {
+        x: rest.x * pull + (rng() - 0.5) * 0.18,
+        y: rest.y * pull + (rng() - 0.5) * 0.16,
+        d: rest.d * lerpR(rng, L.approach),
+      }
 
-    const depthConv = lerpR(rng, tr.converge.depth)
-    puffs.push({
-      layer: LAYER.TRANSITION,
-      rest: { x: Math.cos(theta) * rRest, y: Math.sin(theta) * rRest, d: lerpR(rng, tr.rest.depth), s: lerpR(rng, tr.rest.size) },
-      conv: { x: Math.cos(convTheta) * rConv, y: Math.sin(convTheta) * rConv, d: depthConv, s: lerpR(rng, tr.converge.size) },
-      disp: {
-        x: (dx / dl) * rDisp,
-        y: (dy / dl) * rDisp,
-        d: depthConv - lerpR(rng, tr.disperse.depthPull),
-        s: lerpR(rng, tr.converge.size) * 1.25,
-      },
-      // outer clouds start moving first; central ones open up first
-      convDelay: (1 - (rRest - tr.rest.ring[0]) / (tr.rest.ring[1] - tr.rest.ring[0])) * 0.3 + rng() * 0.08,
-      dispDelay: (rConv / tr.converge.ring[1]) * 0.3 + rng() * 0.1,
-      swirl: (rng() - 0.5) * 2 * tr.converge.swirl,
-      flatten: lerpR(rng, [0.62, 0.9]),
-      light: Math.min(1, 0.55 + Math.sin(theta) * 0.2 + rng() * 0.25),
-      alpha: lerpR(rng, tr.rest.alpha),
-      seed: rng(),
-      tile: pick(rng, tr.tiles),
-      shade: tr.shade,
-    })
-  }
+      // scatter outward from where it ended up, biased up & sideways
+      let dx = conv.x + (rng() - 0.5) * 0.5
+      let dy = conv.y
+      if (dy < 0) dy *= 0.3
+      dy += tr.upBias
+      const dl = Math.hypot(dx, dy) || 1
+      const rDisp = lerpR(rng, L.disperse.ring)
+      const disp = { x: (dx / dl) * rDisp, y: (dy / dl) * rDisp, d: conv.d * L.disperse.approach }
+
+      // curved paths: control points pushed sideways from the straight line
+      const curve = (a, b, k) => {
+        const mx = (a.x + b.x) / 2
+        const my = (a.y + b.y) / 2
+        const px = -(b.y - a.y)
+        const py = b.x - a.x
+        const s = (rng() - 0.5) * 2 * k
+        return { x: mx + px * s, y: my + py * s }
+      }
+
+      const cloud = {
+        layer: name,
+        rest,
+        conv,
+        disp,
+        ctrlC: curve(rest, conv, L.curl),
+        ctrlD: curve(conv, disp, L.curl * 0.8),
+        // world size fixed from the rest framing → perspective growth on approach
+        sizeNorm: lerpR(rng, L.size),
+        delayC: lerpR(rng, L.delay),
+        speedC: lerpR(rng, L.speed),
+        delayD: lerpR(rng, L.disperse.delay),
+        speedD: lerpR(rng, L.disperse.speed),
+        rot0: (rng() - 0.5) * 0.12,
+        spinC: (rng() - 0.5) * 2 * L.spin,
+        spinD: (rng() - 0.5) * 2 * L.spin * 1.4,
+        grow: lerpR(rng, [0.0, 0.12]),
+        wobble: rng() * 100,
+        frame: -1,
+        state: { x: 0, y: 0, d: 0, ang: 0, scale: 1, ci: 0, pi: 0 },
+      }
+
+      // cumulus body: wide flat base, smaller billows stacked on top
+      const np = Math.round(lerpR(rng, L.puffs))
+      for (let k = 0; k < np; k++) {
+        const top = rng()
+        const oy = -0.22 + top * 0.55
+        const ox = (rng() * 2 - 1) * (0.62 - top * 0.3)
+        puffs.push({
+          layer: LAYER.TRANSITION,
+          cloud,
+          ox,
+          oy,
+          oz: (rng() * 2 - 1) * 0.22,
+          size: lerpR(rng, [0.55, 0.85]) * (1 - top * 0.3),
+          flatten: lerpR(rng, [0.7, 0.92]),
+          light: Math.min(1, 0.38 + top * 0.5 + ox * 0.18 + rng() * 0.12),
+          alpha: lerpR(rng, L.alpha),
+          rot: (rng() - 0.5) * 0.5,
+          seed: rng(),
+          tile: pick(rng, tr.tiles),
+          shade: tr.shade,
+        })
+      }
+    }
+  })
 
   return puffs
 }

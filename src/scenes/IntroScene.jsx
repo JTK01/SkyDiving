@@ -3,6 +3,10 @@ import gsap from 'gsap'
 import { useExperience, PHASES } from '../state/useExperience'
 import { runConvergence } from './CloudTransition'
 
+// keep in sync with .intro__title in global.css — GSAP animates the whole
+// filter, so the soft lift has to be part of every keyframe
+const TITLE_LIFT = 'drop-shadow(0 1px 0 rgba(255,255,255,0.35)) drop-shadow(0 10px 28px rgba(8,28,60,0.18))'
+
 /**
  * Scene 01 — title + PRESS TO START.
  *  0.8s title fades in (letter-spacing settles, blur → sharp)
@@ -17,18 +21,20 @@ export default function IntroScene() {
   const sub = useRef()
   const button = useRef()
   const meta = useRef()
+  const halo = useRef()
 
   useLayoutEffect(() => {
-    gsap.set([title.current, sub.current, button.current, meta.current], { autoAlpha: 0 })
+    gsap.set([title.current, sub.current, button.current, meta.current, halo.current], { autoAlpha: 0 })
   }, [])
 
   useEffect(() => {
     if (phase !== PHASES.INTRO) return
     const tl = gsap.timeline()
-    tl.fromTo(
+    tl.fromTo(halo.current, { autoAlpha: 0, scale: 0.9 }, { autoAlpha: 1, scale: 1, duration: 1.6, ease: 'sine.out' }, 0.6)
+      .fromTo(
       title.current,
-      { autoAlpha: 0, letterSpacing: '0.62em', filter: 'blur(16px)', y: 10 },
-      { autoAlpha: 1, letterSpacing: window.innerWidth <= 720 ? '0.22em' : '0.3em', filter: 'blur(0px)', y: 0, duration: 1.0, ease: 'power3.out' },
+      { autoAlpha: 0, letterSpacing: '0.42em', filter: `blur(14px) ${TITLE_LIFT}`, y: 10 },
+      { autoAlpha: 1, letterSpacing: window.innerWidth <= 720 ? '0.1em' : '0.16em', filter: `blur(0px) ${TITLE_LIFT}`, y: 0, duration: 1.0, ease: 'power3.out' },
       0.8,
     )
       .fromTo(sub.current, { autoAlpha: 0, y: 6 }, { autoAlpha: 1, y: 0, duration: 0.9, ease: 'power2.out' }, 1.3)
@@ -45,9 +51,11 @@ export default function IntroScene() {
   useEffect(() => {
     if (phase !== PHASES.CONVERGING) return
     const tl = gsap.timeline()
-    tl.to([title.current, sub.current], { autoAlpha: 0, y: -8, filter: 'blur(8px)', duration: 0.9, ease: 'power2.in' }, 0.05)
+    tl.to(title.current, { autoAlpha: 0, y: -8, filter: `blur(8px) ${TITLE_LIFT}`, duration: 0.9, ease: 'power2.in' }, 0.05)
+      .to(sub.current, { autoAlpha: 0, y: -8, filter: 'blur(8px)', duration: 0.9, ease: 'power2.in' }, 0.05)
       .to(button.current, { autoAlpha: 0, y: 6, duration: 0.6, ease: 'power2.in' }, 0.12)
       .to(meta.current, { autoAlpha: 0, duration: 0.6 }, 0)
+      .to(halo.current, { autoAlpha: 0, duration: 0.9, ease: 'sine.in' }, 0.1)
     return () => tl.kill()
   }, [phase])
 
@@ -62,6 +70,7 @@ export default function IntroScene() {
 
   return (
     <section className="intro" ref={root} aria-label="SKY DIVE intro">
+      <div className="intro__halo" ref={halo} aria-hidden />
       <div className="intro__center">
         <h1 className="intro__title" ref={title}>
           SKY DIVE

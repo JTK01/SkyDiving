@@ -4,7 +4,13 @@ import Experience from './three/Experience'
 import IntroScene from './scenes/IntroScene'
 import AuthStage from './scenes/AuthStage'
 import MetaverseScene from './scenes/MetaverseScene'
-import { runIntro } from './scenes/CloudTransition'
+import { runIntro, getActiveTimeline } from './scenes/CloudTransition'
+import { cine } from './state/cinematic'
+
+// `?debug` exposes the director so a timeline can be paused & scrubbed
+if (typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('debug')) {
+  window.__skydive = { gsap, cine, getActiveTimeline }
+}
 import { useExperience } from './state/useExperience'
 import { AuthController } from './auth/AuthController'
 

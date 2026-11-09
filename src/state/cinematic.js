@@ -25,6 +25,7 @@ export const cine = {
   densityBoost: 1, // >1 grows size & opacity of the transition clouds
   cover: 0, // full-screen "inside the cloud" layer coverage
   open: 0, // radial opening of the interior layer (cloud parting)
+  push: 0, // how far the camera has drifted into the cloud interior
 
   // ---- atmosphere ------------------------------------------------------
   brightness: 0, // global light level (0 = black, 1 = normal)

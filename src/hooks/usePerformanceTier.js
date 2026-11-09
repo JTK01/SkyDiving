@@ -4,6 +4,8 @@
  */
 export function detectTier() {
   if (typeof window === 'undefined') return 'high'
+  const forced = new URLSearchParams(window.location.search).get('tier')
+  if (forced === 'high' || forced === 'low') return forced
   const coarse = window.matchMedia?.('(pointer: coarse)').matches
   const small = Math.min(window.innerWidth, window.innerHeight) < 700
   const cores = navigator.hardwareConcurrency || 4

@@ -1139,3 +1139,57 @@ input {
   position: absolute;
   inset: 0;
 }
+
+.play-hud__actions {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+.play-hud__quality {
+  pointer-events: auto;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 4px 4px 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.45);
+  background: rgba(14, 31, 54, 0.35);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  font-size: 11px;
+  letter-spacing: 0.1em;
+}
+.play-hud__quality span {
+  margin-right: 4px;
+  opacity: 0.85;
+}
+.play-hud__quality button {
+  border: 0;
+  border-radius: 999px;
+  width: 30px;
+  height: 26px;
+  background: transparent;
+  color: #fff;
+  font-weight: 700;
+  cursor: pointer;
+}
+.play-hud__quality button.is-on {
+  background: #fff;
+  color: var(--navy);
+}
+.play-hud__quality small {
+  font-size: 9px;
+  opacity: 0.7;
+  margin: 0 6px 0 2px;
+}
+.play-hud__stats-debug {
+  position: absolute;
+  top: 70px;
+  right: clamp(16px, 3vw, 40px);
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.55);
+  font: 11px/1.45 ui-monospace, Menlo, Consolas, monospace;
+  text-shadow: none;
+}

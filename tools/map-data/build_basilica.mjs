@@ -96,7 +96,8 @@ fs.writeFileSync(raw, Buffer.concat([header, ch(js.length, 0x4e4f534a), js, ch(b
 
 // --- meshopt compression (vertex dedup, reorder, quantise, EXT_meshopt) --
 const glb = path.join(out, 'basilica.glb')
-execFileSync('node', [path.join(here, 'node_modules/gltfpack/cli.js'), '-i', raw, '-o', glb, '-cc', '-kv', '-km', '-kn', '-vp', '14', '-vt', '12'], { stdio: 'inherit' })
+// 16-bit texcoords: values stay in 0..1 (no KHR_texture_transform needed — there is no texture)
+execFileSync('node', [path.join(here, 'node_modules/gltfpack/cli.js'), '-i', raw, '-o', glb, '-cc', '-kv', '-km', '-kn', '-vp', '14', '-vt', '16'], { stdio: 'inherit' })
 const rawSize = fs.statSync(raw).size
 fs.unlinkSync(raw)
 

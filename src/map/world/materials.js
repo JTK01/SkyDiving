@@ -1,55 +1,84 @@
 import * as THREE from 'three'
-
-// Barcelona palette: Eixample roofs are terracotta tile or pale terraces,
-// façades warm stone / render
-export const ROOF_NEAR = ['#c4673d', '#b95c36', '#cf7a4c', '#c06a44', '#d38b5e', '#cdbb9e', '#a99f93', '#c2703f']
-export const ROOF_MID = ['#bf6c47', '#c98a64', '#b9ad9c', '#cbbca5', '#a69c90', '#c57a52', '#d2c4ae', '#9f958a']
-export const FACADE = ['#e4d4ba', '#dccaa9', '#eadfcb', '#d6bf9c', '#cfb08c', '#e6cfae', '#c9c0b2', '#ddc7aa']
+import { withAerial } from './aerial'
 
 /**
- * Façade detail for building materials: storey/bay window grid drawn from
- * world position (fades out where it would alias), street-level shade, and
- * a separate roof colour on upward faces (instance or vertex attribute).
+ * Building material: façade / roof / ground-floor atlas (public/textures/
+ * buildings.ktx2, 4×4 cells, see tools/map-data/build_textures.py).
+ *
+ * No UVs are stored: walls are mapped from world position along the wall
+ * (bays of 3.6 m, storeys of 3.1 m; one cell = 4 × 4), roofs from world x/z
+ * (one cell = 16 m), the ground floor (< 4.5 m) from the ground-floor row.
+ * Per building `aStyle` = (façade cell 0–7, roof cell 0–3, brightness),
+ * `aBase` = ground height (instanced boxes read both from the instance).
+ * textureGrad with continuous coordinates avoids mip seams at cell wraps.
  */
-export function buildingMaterial({ instanced }) {
-  const m = new THREE.MeshStandardMaterial({ roughness: 0.9, metalness: 0, vertexColors: !instanced })
+export const ROOF_CELL_NEAR = [0, 0, 0, 0, 3, 1, 2, 0] // roof palette index → atlas roof cell
+export const ROOF_CELL_MID = [0, 3, 1, 1, 2, 0, 1, 2]
+
+export function buildingMaterial({ instanced, atlas }) {
+  const m = new THREE.MeshStandardMaterial({ roughness: 0.88, metalness: 0, envMapIntensity: 0.8 })
+  m.userData.cacheKey = instanced ? 'bldI' : 'bldN'
   m.onBeforeCompile = (shader) => {
+    shader.uniforms.uAtlas = { value: atlas }
     shader.vertexShader = shader.vertexShader
       .replace(
         '#include <common>',
         `#include <common>
-         varying vec3 vWPos; varying vec3 vWNrm; varying vec3 vFacade;
-         ${instanced ? 'attribute vec3 aFacade;' : 'attribute vec3 facade;'}`,
+         attribute vec3 aStyle;
+         ${instanced ? '' : 'attribute float aBase;'}
+         varying vec3 vBW; varying vec3 vBN; varying vec3 vStyle; varying float vBase;`,
       )
       .replace(
         '#include <worldpos_vertex>',
         `#include <worldpos_vertex>
-         vec4 wpp = vec4(transformed, 1.0);
+         vec4 bw = vec4(transformed, 1.0);
          #ifdef USE_INSTANCING
-           wpp = instanceMatrix * wpp;
-           vWNrm = normalize(mat3(modelMatrix) * mat3(instanceMatrix) * objectNormal);
+           bw = instanceMatrix * bw;
+           vBN = normalize(mat3(modelMatrix) * mat3(instanceMatrix) * objectNormal);
+           vBase = (modelMatrix * instanceMatrix * vec4(0.0, 0.0, 0.0, 1.0)).y + 2.0;
          #else
-           vWNrm = normalize(mat3(modelMatrix) * objectNormal);
+           vBN = normalize(mat3(modelMatrix) * objectNormal);
+           vBase = aBase;
          #endif
-         vWPos = (modelMatrix * wpp).xyz;
-         vFacade = ${instanced ? 'aFacade' : 'facade'};`,
+         vBW = (modelMatrix * bw).xyz;
+         vStyle = aStyle;`,
       )
     shader.fragmentShader = shader.fragmentShader
-      .replace('#include <common>', '#include <common>\nvarying vec3 vWPos; varying vec3 vWNrm; varying vec3 vFacade;')
       .replace(
-        '#include <color_fragment>',
-        `#include <color_fragment>
-         if (vWNrm.y < 0.5) {
-           diffuseColor.rgb = vFacade;
-           vec3 tang = normalize(cross(vec3(0.0, 1.0, 0.0), vWNrm) + 1e-4);
-           float u = dot(vWPos, tang) / 3.6;
-           float v = vWPos.y / 3.1;
-           float fw = max(fwidth(u), fwidth(v));
-           float win = step(0.32, fract(u)) * step(0.3, fract(v));
-           float fade = 1.0 - smoothstep(0.3, 0.75, fw);
-           diffuseColor.rgb *= 1.0 - win * 0.36 * fade - (1.0 - fade) * 0.12;
+        '#include <common>',
+        `#include <common>
+         uniform sampler2D uAtlas;
+         varying vec3 vBW; varying vec3 vBN; varying vec3 vStyle; varying float vBase;
+         vec3 atlasCell(vec2 cell, vec2 p) {
+           vec2 f = clamp(fract(p), 0.004, 0.996);
+           return textureGrad(uAtlas, (cell + f) * 0.25, dFdx(p) * 0.25, dFdy(p) * 0.25).rgb;
          }`,
       )
+      .replace(
+        '#include <map_fragment>',
+        `{
+           vec3 c;
+           float h = vBW.y - vBase;
+           if (vBN.y > 0.5) {
+             c = atlasCell(vec2(vStyle.y, 2.0), vBW.xz / 16.0);
+           } else {
+             vec3 tang = normalize(cross(vec3(0.0, 1.0, 0.0), vBN) + 1e-4);
+             float u = dot(vBW, tang) / 14.4;
+             if (h < 4.5) c = atlasCell(vec2(mod(vStyle.x, 4.0), 3.0), vec2(u, h / 4.5));
+             else c = atlasCell(vec2(mod(vStyle.x, 4.0), floor(vStyle.x / 4.0)), vec2(u, (h - 4.5) / 12.4));
+             // contact shadow / street canyon occlusion toward the ground
+             c *= mix(0.62, 1.0, smoothstep(0.0, 14.0, h));
+           }
+           diffuseColor.rgb = c * vStyle.z;
+         }`,
+      )
+      .replace(
+        '#include <roughnessmap_fragment>',
+        `#include <roughnessmap_fragment>
+         // glass reads glossy: dark, bluish texels get low roughness
+         float glassy = smoothstep(0.25, 0.0, dot(diffuseColor.rgb, vec3(0.33))) * step(vBN.y, 0.5);
+         roughnessFactor = mix(roughnessFactor, 0.25, glassy);`,
+      )
   }
-  return m
+  return withAerial(m)
 }

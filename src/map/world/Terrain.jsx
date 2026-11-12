@@ -2,11 +2,14 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useFrame, useThree } from '@react-three/fiber'
 import * as THREE from 'three'
 import { tileKey } from '../data/MapData'
-import { parseKTX2 } from './loaders'
+import { parseKTX2, loadKTX2 } from './loaders'
 import { SUN_DIR, HAZE, SUN_COLOR } from './atmosphereConfig'
+import { AERIAL, AERIAL_GLSL } from './aerial'
 
 /**
- * Streamed terrain: quadtree of height + imagery tiles (L0 65 km … L5 2 km).
+ * Streamed terrain: quadtree of height + imagery tiles (L0 65 km … L8 256 m).
+ * Shading: slope/altitude material blend, detail normal map near the camera,
+ * sun shadow mask, sea, and the shared aerial perspective.
  *
  * Selection (every few frames): a tile is split when the camera is closer
  * than `size × detail` and all four children exist in the tile set. A tile
@@ -18,7 +21,7 @@ import { SUN_DIR, HAZE, SUN_COLOR } from './atmosphereConfig'
  */
 const vertex = /* glsl */ `
   #include <common>
-  #include <fog_pars_vertex>
+  #include <shadowmap_pars_vertex>
   #include <logdepthbuf_pars_vertex>
   attribute float aSea;
   varying vec2 vUv;
@@ -26,26 +29,33 @@ const vertex = /* glsl */ `
   varying vec3 vNormalW;
   varying float vSea;
   void main() {
+    #include <beginnormal_vertex>
+    #include <defaultnormal_vertex>
+    #include <begin_vertex>
+    #include <project_vertex>
+    #include <logdepthbuf_vertex>
+    #include <worldpos_vertex>
+    #include <shadowmap_vertex>
     vUv = uv;
     vSea = aSea;
-    vec4 wp = modelMatrix * vec4(position, 1.0);
-    vWorld = wp.xyz;
+    vWorld = (modelMatrix * vec4(position, 1.0)).xyz;
     vNormalW = normalize(mat3(modelMatrix) * normal);
-    vec4 mvPosition = viewMatrix * wp;
-    gl_Position = projectionMatrix * mvPosition;
-    #include <logdepthbuf_vertex>
-    #include <fog_vertex>
   }
 `
 const fragment = /* glsl */ `
   #include <common>
-  #include <fog_pars_fragment>
+  #include <packing>
+  #include <lights_pars_begin>
+  #include <shadowmap_pars_fragment>
+  #include <shadowmask_pars_fragment>
   #include <logdepthbuf_pars_fragment>
+  ${AERIAL_GLSL}
   uniform sampler2D uMap;
+  uniform sampler2D uDetail;
+  uniform float uDetailOn;
   uniform vec3 uSun;
   uniform vec3 uSunColor;
   uniform vec3 uSky;
-  uniform vec2 uNear;      // near-zone paving: radius, fade-in (0..1)
   uniform float uTime;
   varying vec2 vUv;
   varying vec3 vWorld;
@@ -63,17 +73,30 @@ const fragment = /* glsl */ `
     #include <logdepthbuf_fragment>
     vec3 albedo = texture2D(uMap, vUv).rgb;
     vec3 n = normalize(vNormalW);
-    vec3 v = normalize(cameraPosition - vWorld);
+    vec3 toCam = cameraPosition - vWorld;
+    float dist = length(toCam);
+    vec3 v = toCam / dist;
 
-    // near zone: city paving under the modelled streets/blocks (imagery at
-    // 8–10 m/px is too soft to read from street level)
-    float dNear = length(vWorld.xz);
-    float near = uNear.y * (1.0 - smoothstep(uNear.x * 0.82, uNear.x, dNear)) * (1.0 - vSea);
-    vec3 paving = vec3(0.70, 0.66, 0.60) * (0.92 + 0.16 * noise(vWorld.xz * 0.35));
-    albedo = mix(albedo, paving, near);
+    // slope / altitude material blend: steep ground reads as bare rock,
+    // high ground (Collserola, ≥ 250 m) slightly cooler and darker forest
+    float slope = 1.0 - n.y;
+    float lum = dot(albedo, vec3(0.299, 0.587, 0.114));
+    vec3 rock = mix(vec3(lum), albedo, 0.35) * vec3(0.95, 0.92, 0.88);
+    albedo = mix(albedo, rock, smoothstep(0.28, 0.55, slope) * (1.0 - vSea));
+    albedo *= mix(1.0, 0.86, smoothstep(250.0, 450.0, vWorld.y) * (1.0 - vSea));
 
-    float ndl = max(dot(n, uSun), 0.0);
-    vec3 col = albedo * (uSky * 0.55 * (0.6 + 0.4 * n.y) + uSunColor * ndl * 0.95);
+    // detail normal map at two scales, faded out with distance
+    float near = uDetailOn * (1.0 - smoothstep(250.0, 2500.0, dist)) * (1.0 - vSea);
+    if (near > 0.001) {
+      vec2 d1 = texture2D(uDetail, vWorld.xz / 22.0).xy * 2.0 - 1.0;
+      vec2 d2 = texture2D(uDetail, vWorld.xz / 3.5).xy * 2.0 - 1.0;
+      vec2 dn = d1 * 0.55 + d2 * 0.35 * (1.0 - smoothstep(60.0, 400.0, dist));
+      n = normalize(n + vec3(dn.x, 0.0, dn.y) * near);
+      albedo *= 1.0 + (d1.x + d2.y) * 0.05 * near;
+    }
+
+    float ndl = max(dot(n, uSun), 0.0) * getShadowMask();
+    vec3 col = albedo * (uSky * 0.42 * (0.6 + 0.4 * n.y) + uSunColor * ndl * 1.05);
 
     // sea: sky reflection with Fresnel, gentle waves and sun glint
     if (vSea > 0.01) {
@@ -83,14 +106,13 @@ const fragment = /* glsl */ `
       vec3 deep = albedo * 0.85 + vec3(0.02, 0.06, 0.1);
       vec3 water = mix(deep, uSky * 0.95, fres * 0.85);
       vec3 h = normalize(uSun + v);
-      water += uSunColor * pow(max(dot(wn, h), 0.0), 280.0) * 2.5;
+      water += uSunColor * pow(max(dot(wn, h), 0.0), 280.0) * 3.0;
       col = mix(col, water, vSea);
     }
 
-    gl_FragColor = vec4(col, 1.0);
+    gl_FragColor = vec4(aerialPerspective(col, vWorld), 1.0);
     #include <tonemapping_fragment>
     #include <colorspace_fragment>
-    #include <fog_fragment>
   }
 `
 
@@ -158,7 +180,7 @@ function buildGeometry(heights, n, size) {
   return g
 }
 
-export default function Terrain({ data, manifest, detail = 1.6, nearFade = 0, maxTiles = 140, maxLevel = 5, buildPerFrame = 3, onStats }) {
+export default function Terrain({ data, manifest, detail = 1.6, maxTiles = 140, maxLevel = 8, buildPerFrame = 3, anisotropy = 4, onStats }) {
   const { camera, gl } = useThree()
   const group = useRef()
   const [, setTick] = useState(0)
@@ -170,12 +192,33 @@ export default function Terrain({ data, manifest, detail = 1.6, nearFade = 0, ma
       uSun: { value: SUN_DIR },
       uSunColor: { value: SUN_COLOR },
       uSky: { value: HAZE.clone().lerp(new THREE.Color('#8fb4dc'), 0.5) },
-      uNear: { value: new THREE.Vector2(manifest.features.radius, 0) },
       uTime: { value: 0 },
-      ...THREE.UniformsLib.fog,
+      uDetail: { value: null },
+      uDetailOn: { value: 0 },
+      ...AERIAL,
+      ...THREE.UniformsLib.lights,
     }),
-    [manifest],
+    [],
   )
+
+  useEffect(() => {
+    let live = true
+    let tex
+    loadKTX2(gl, `${import.meta.env.BASE_URL || '/'}textures/detail_normal.ktx2`).then((t) => {
+      if (!live) return t.dispose()
+      tex = t
+      t.wrapS = t.wrapT = THREE.RepeatWrapping
+      t.colorSpace = THREE.NoColorSpace
+      t.anisotropy = Math.min(anisotropy, gl.capabilities.getMaxAnisotropy())
+      t.needsUpdate = true
+      uniforms.uDetail.value = t
+      uniforms.uDetailOn.value = 1
+    })
+    return () => {
+      live = false
+      tex?.dispose()
+    }
+  }, [gl, uniforms, anisotropy])
 
   const tileInfo = (L, i, j) => {
     const s = (2 * T.half) / 2 ** L
@@ -241,9 +284,10 @@ export default function Terrain({ data, manifest, detail = 1.6, nearFade = 0, ma
     tex.flipY = false
     tex.wrapS = tex.wrapT = THREE.ClampToEdgeWrapping
     if (!ktex) tex.colorSpace = THREE.SRGBColorSpace
-    tex.anisotropy = Math.min(8, gl.capabilities.getMaxAnisotropy())
+    tex.anisotropy = Math.min(anisotropy, gl.capabilities.getMaxAnisotropy())
     tex.needsUpdate = true
-    const material = new THREE.ShaderMaterial({ vertexShader: vertex, fragmentShader: fragment, fog: true, uniforms: { ...uniforms, uMap: { value: tex } } })
+    const material = new THREE.ShaderMaterial({ vertexShader: vertex, fragmentShader: fragment, lights: true, uniforms: { ...uniforms, uMap: { value: tex } } })
+    material.extensions = {}
     const mesh = new THREE.Mesh(geometry, material)
     mesh.position.set(t.x0, 0, t.z0)
     mesh.matrixAutoUpdate = false
@@ -263,7 +307,6 @@ export default function Terrain({ data, manifest, detail = 1.6, nearFade = 0, ma
       st.queue.sort((a, b) => a.t.L - b.t.L)
       for (const item of st.queue.splice(0, buildPerFrame)) build(item)
     }
-    uniforms.uNear.value.y += (nearFade - uniforms.uNear.value.y) * Math.min(1, dt * 2)
     if (++st.frame % 6 !== 0 && !st.dirty) return
     st.dirty = false
     st.wanted.clear()

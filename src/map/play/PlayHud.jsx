@@ -1,5 +1,33 @@
 import { useEffect, useRef } from 'react'
 import Credits from './Credits'
+import { useQuality, PRESETS } from '../quality'
+
+/** 저/중/고 quality switch (auto-picked at first, the choice is remembered) */
+function QualityMenu() {
+  const { name, source, choose } = useQuality()
+  return (
+    <div className="play-hud__quality" role="group" aria-label="그래픽 품질">
+      <span>품질</span>
+      {Object.entries(PRESETS).map(([k, p]) => (
+        <button key={k} type="button" className={k === name ? 'is-on' : ''} aria-pressed={k === name} onClick={() => choose(k)}>
+          {p.label}
+        </button>
+      ))}
+      {source === 'auto' && <small>자동</small>}
+    </div>
+  )
+}
+
+/** ?debug: live frame statistics (fps, frame time, resolution, draw calls) */
+function FrameStats() {
+  const q = useQuality()
+  return (
+    <pre className="play-hud__stats-debug">
+      {`${q.fps} fps · avg ${q.frameMs} ms · worst ${q.worstMs} ms\nres ×${q.scale} · ${q.name}\ndraws ${q.calls} · tris ${(q.triangles / 1000) | 0}k\ngeo ${q.geometries} · tex ${q.textures}`}
+    </pre>
+  )
+}
+const DEBUG = typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('debug')
 
 /** skydive HUD: altitude above ground, fall speed, distance from the landmark */
 export default function PlayHud({ map, manifest, state, ended, onRestart, onExit }) {
@@ -27,10 +55,14 @@ export default function PlayHud({ map, manifest, state, ended, onRestart, onExit
           <span className="play-hud__eyebrow">DROP ZONE</span>
           <strong>{map.name}</strong>
         </div>
-        <button type="button" className="play-hud__exit" onClick={onExit}>
-          맵 선택
-        </button>
+        <div className="play-hud__actions">
+          <QualityMenu />
+          <button type="button" className="play-hud__exit" onClick={onExit}>
+            맵 선택
+          </button>
+        </div>
       </header>
+      {DEBUG && <FrameStats />}
       <dl className="play-hud__stats">
         <div>
           <dt>ALTITUDE</dt>

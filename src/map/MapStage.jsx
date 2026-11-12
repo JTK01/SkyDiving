@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { Canvas, useFrame, useThree } from '@react-three/fiber'
 import * as THREE from 'three'
-import { usePerformanceTier } from '../hooks/usePerformanceTier'
+import { useQuality, preset } from './quality'
 import { getMapData, releaseMapData } from './data/MapData'
 import MapWorld from './world/MapWorld'
 import DropController, { createDropState } from './play/DropController'
@@ -93,6 +93,19 @@ function EnterFlight({ to, fov, duration = 2.6, onDone }) {
   return null
 }
 
+/** turn the shadow map on/off when the preset changes (materials recompile) */
+function ShadowSwitch({ enabled }) {
+  const { gl, scene } = useThree()
+  useEffect(() => {
+    if (gl.shadowMap.enabled === enabled) return
+    gl.shadowMap.enabled = enabled
+    scene.traverse((o) => {
+      if (o.material) [].concat(o.material).forEach((m) => (m.needsUpdate = true))
+    })
+  }, [gl, scene, enabled])
+  return null
+}
+
 function dropPose(state) {
   const o = new THREE.Object3D()
   o.rotation.order = 'YXZ'
@@ -127,7 +140,8 @@ function useStageRect(mode, anchor, fromRect) {
 }
 
 export default function MapStage({ map, mode, anchor, fromRect, onEntered, onExit }) {
-  const quality = usePerformanceTier()
+  const quality = useQuality((q) => q.name)
+  const resolveQuality = useQuality((q) => q.resolve)
   const data = useMemo(() => getMapData(map.world.tiles), [map.world.tiles])
   useEffect(() => () => releaseMapData(map.world.tiles), [map.world.tiles]) // free the cache when the stage goes away
   const { manifest, ready } = useEssentials(data, mode)
@@ -159,22 +173,25 @@ export default function MapStage({ map, mode, anchor, fromRect, onEntered, onExi
       {manifest && (
         <Canvas
           className="map-stage__canvas"
-          flat
-          shadows={quality.tier !== 'low'}
-          dpr={quality.tier === 'low' ? [0.75, 1] : [1, 1.5]}
-          gl={{ logarithmicDepthBuffer: true, antialias: quality.tier !== 'low', powerPreference: 'high-performance' }}
+          shadows={{ type: THREE.PCFSoftShadowMap }}
+          dpr={1}
+          gl={{ logarithmicDepthBuffer: true, antialias: false, powerPreference: 'high-performance', stencil: false }}
           camera={{ fov: orbit.fov, near: 1, far: 120000, position: [0, manifest.frame.groundY + orbit.altitude, orbit.radius] }}
           style={{ opacity: shown && firstFrame ? 1 : 0, pointerEvents: playing ? 'auto' : 'none' }}
-          onCreated={({ camera, scene }) => {
+          onCreated={({ camera, scene, gl }) => {
+            gl.toneMapping = THREE.NeutralToneMapping
+            gl.toneMappingExposure = 0.95
+            resolveQuality(gl.domElement)
             if (mode !== 'preview') orbitPose(orbit, manifest.frame.groundY, 0, camera)
-            if (window.__skydive) Object.assign(window.__skydive, { mapCamera: camera, mapScene: scene })
+            if (window.__skydive) Object.assign(window.__skydive, { mapCamera: camera, mapScene: scene, mapGL: gl })
           }}
         >
-          {ready.preview && (
+          {ready.preview && quality && (
             <MapWorld map={map} data={data} manifest={manifest} mode={mode === 'preview' ? 'preview' : 'play'} quality={quality} onStats={(st) => !firstFrame && st.drawn > 0 && setFirstFrame(true)} />
           )}
           {mode === 'preview' && <PreviewOrbit orbit={orbit} groundY={manifest.frame.groundY} clock={clock} />}
           {mode === 'entering' && ready.preview && <EnterFlight to={dropPose(state)} fov={70} onDone={onEntered} />}
+          <ShadowSwitch enabled={playing && preset(quality).shadows > 0} />
           {playing && <DropController key={run} drop={drop} groundY={manifest.frame.groundY} state={state} enabled={ready.play} onEnd={() => setEnded(true)} />}
         </Canvas>
       )}

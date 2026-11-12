@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useFrame, useThree } from '@react-three/fiber'
 import * as THREE from 'three'
 import { tileKey } from '../data/MapData'
-import { SUN_DIR, HAZE, SUN_COLOR } from './atmosphere'
+import { SUN_DIR, HAZE, SUN_COLOR } from './atmosphereConfig'
 
 /**
  * Streamed terrain: quadtree of height + imagery tiles (L0 65 km … L5 2 km).

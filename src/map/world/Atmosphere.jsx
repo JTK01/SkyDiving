@@ -1,7 +1,7 @@
 import { useMemo, useRef } from 'react'
 import { useFrame, useThree } from '@react-three/fiber'
 import * as THREE from 'three'
-import { SUN_DIR, HAZE, ZENITH, FOG_DENSITY, SUN_COLOR } from './atmosphere'
+import { SUN_DIR, HAZE, ZENITH, FOG_DENSITY, SUN_COLOR } from './atmosphereConfig'
 
 function SkyDome() {
   const ref = useRef()

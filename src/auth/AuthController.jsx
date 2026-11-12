@@ -20,6 +20,8 @@ export function AuthController({ children }) {
   const providerRef = useRef(null)
   const [user, setUser] = useState(null)
   const [status, setStatus] = useState('idle') // idle | pending | error
+  // true once the stored session (if any) has been restored
+  const [ready, setReady] = useState(false)
 
   const provider = useCallback(async () => {
     if (!providerRef.current) {
@@ -35,6 +37,7 @@ export function AuthController({ children }) {
       .then((p) => p.getSession())
       .then((u) => u && setUser(u))
       .catch(() => {})
+      .finally(() => setReady(true))
   }, [provider])
 
   const run = useCallback(
@@ -58,6 +61,7 @@ export function AuthController({ children }) {
     () => ({
       user,
       status,
+      ready,
       signIn: (c) => run('signIn', c),
       signUp: (c) => run('signUp', c),
       signOut: async () => {
@@ -66,7 +70,7 @@ export function AuthController({ children }) {
         setUser(null)
       },
     }),
-    [user, status, run, provider],
+    [user, status, ready, run, provider],
   )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>

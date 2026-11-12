@@ -48,7 +48,7 @@ function ReadySignal({ onReady }) {
   return null
 }
 
-export default function Experience({ onReady }) {
+export default function Experience({ onReady, paused = false }) {
   const quality = usePerformanceTier()
   useEffect(() => {
     document.documentElement.dataset.tier = quality.tier
@@ -58,6 +58,7 @@ export default function Experience({ onReady }) {
     <Canvas
       className="webgl"
       dpr={quality.dpr}
+      frameloop={paused ? 'never' : 'always'}
       flat
       gl={{ antialias: false, alpha: false, powerPreference: 'high-performance', stencil: false }}
       camera={{ fov: 55, near: 0.5, far: 6000, position: [0, 112, 60] }}

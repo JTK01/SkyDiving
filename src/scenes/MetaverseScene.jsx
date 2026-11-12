@@ -4,6 +4,7 @@ import { useExperience, PHASES } from '../state/useExperience'
 import { useAuth } from '../auth/AuthController'
 import { runReconvergence } from './CloudTransition'
 import { AVATAR_SLOTS } from '../three/WorldProps'
+import MapSelect, { useMapSelection } from './MapSelect'
 
 /**
  * SKY DIVE METAVERSE — main world HUD (the 3D world itself lives in
@@ -48,7 +49,10 @@ export default function MetaverseScene() {
   const onSignOut = async () => {
     if (locked) return
     const tl = runReconvergence()
-    if (tl) await signOut()
+    if (tl) {
+      useMapSelection.getState().select(null)
+      await signOut()
+    }
   }
 
   if (!visible) return null
@@ -67,6 +71,8 @@ export default function MetaverseScene() {
           </button>
         </div>
       </header>
+
+      <MapSelect disabled={locked || phase !== PHASES.WORLD} />
 
       <footer className="hud__bottom">
         <dl className="hud__telemetry" data-hud>

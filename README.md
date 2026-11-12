@@ -108,6 +108,13 @@ src/
 - 모든 연출 값은 React 상태가 아닌 가변 객체 → 애니메이션 중 리렌더 없음
 - 타임라인 시작 시 이전 타임라인 kill + 전역 `locked` 플래그로 중복 클릭 방지
 
+## 맵 선택 (로그인 이후)
+
+- WORLD 화면 좌측의 반투명 패널(`src/scenes/MapSelect.jsx`)에 맵 목록이 표시되고, 맵을 고르면 패널 옆에 원거리 전경 미리보기(별도 WebGL 캔버스, 랜드마크 중심 자동 공전, 조작 불가)와 **입장** 버튼이 나타납니다.
+- 맵 목록은 `src/data/maps.js`의 `MAPS` 배열 하나로 관리합니다. 맵 추가 = 항목 추가(`id`, `name`, `status`, `thumbnail`, `preview.scene`, `unlock.cost`). 미리보기 3D 장면은 `src/three/preview/scenes.js`에 키로 등록합니다(지연 로딩).
+- 잠금: 사용자가 처음 선택한 플레이 가능 맵이 '내 맵'이 되고, 나머지는 잠금 아이콘. 사용자별 상태는 `src/state/useMapAccess.js`(`firstPickId`, `unlockedIds`, 현재 localStorage). 포인트 해금은 `unlock.cost` + `unlockedIds`에 추가하는 방식으로 이후 구현.
+- 라우트: `/maps/:id` (`src/router/router.js`, History API). 로그인·해금된 플레이 가능 맵만 열리고, 아니면 `/`로 돌아갑니다. 정적 호스팅 시 SPA fallback(모든 경로 → `index.html`) 설정이 필요합니다.
+
 ## 디버그
 
 `?debug`를 붙여 열면 `window.__skydive`(`gsap`, `cine`, `getActiveTimeline`, `cloudMs` = 구름 갱신 CPU 시간)가 노출됩니다. 예: 콘솔에서 `__skydive.getActiveTimeline().pause().seek(1.5)`로 전환 장면의 특정 시점을 멈춰 볼 수 있습니다.

@@ -1,0 +1,12 @@
+{
+  "name": "sky-dive-map-data-tools",
+  "private": true,
+  "type": "module",
+  "description": "Offline map-data tools (not part of the app bundle)",
+  "dependencies": {
+    "gltfpack": "1.3.0",
+    "ktx2-encoder": "0.6.0",
+    "pngjs": "7.0.0",
+    "three": "0.169.0"
+  }
+}

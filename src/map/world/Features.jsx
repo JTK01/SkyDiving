@@ -68,7 +68,7 @@ function toMesh(out, material) {
   return m
 }
 
-export default function Features({ data, treeStride = 1 }) {
+export default function Features({ data, treeStride = 1, imageryDetail = true }) {
   const [f, setF] = useState(null)
   useEffect(() => {
     let live = true
@@ -114,8 +114,10 @@ export default function Features({ data, treeStride = 1 }) {
     }
     trees.castShadow = true
     trees.computeBoundingSphere()
-    return { list: [toMesh(areas, mat), toMesh(ponds, water), toMesh(roads, mat), trees], materials: [mat, water, tmat] }
-  }, [f, treeStride])
+    // ground polygons & roads are only needed without high-resolution imagery
+    const list = imageryDetail ? [trees] : [toMesh(areas, mat), toMesh(ponds, water), toMesh(roads, mat), trees]
+    return { list, materials: [mat, water, tmat] }
+  }, [f, treeStride, imageryDetail])
 
   useEffect(
     () => () => {

@@ -70,13 +70,15 @@ export class MapData {
     })
   }
 
-  /** { heights: Float32Array(n²), image: ImageBitmap } */
+  /** { heights: Float32Array(n²), ktx2: ArrayBuffer } (or image: ImageBitmap for jpg/png sets) */
   terrainTile(L, i, j) {
     return this.memo(`t${key(L, i, j)}`, async () => {
       const m = await this.manifest()
       const img = m.terrain.imagery[m.terrain.imagerySource]
       const [hb, ib] = await Promise.all([this.fetch(`height/${key(L, i, j)}.png`), this.fetch(`${img.path}/${key(L, i, j)}.${img.ext}`)])
       const heights = await decodeHeights(new Blob([hb], { type: 'image/png' }), m.terrain.heightSize)
+      // KTX2 stays compressed until the renderer transcodes it (Terrain)
+      if (img.ext === 'ktx2') return { heights, ktx2: ib }
       const image = await createImageBitmap(new Blob([ib], { type: `image/${img.ext === 'jpg' ? 'jpeg' : img.ext}` }), { imageOrientation: 'none' })
       if (this.released) image.close()
       return { heights, image }

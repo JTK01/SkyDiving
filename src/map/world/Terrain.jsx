@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useFrame, useThree } from '@react-three/fiber'
 import * as THREE from 'three'
 import { tileKey } from '../data/MapData'
+import { parseKTX2 } from './loaders'
 import { SUN_DIR, HAZE, SUN_COLOR } from './atmosphereConfig'
 
 /**
@@ -186,8 +187,11 @@ export default function Terrain({ data, manifest, detail = 1.6, nearFade = 0, ma
     st.pending.add(t.key)
     data
       .terrainTile(t.L, t.i, t.j)
-      .then((d) => {
-        st.queue.push({ t, d }) // GPU upload happens in useFrame, a few tiles per frame
+      .then(async (d) => {
+        // KTX2 is transcoded in a worker; the GPU upload happens in useFrame,
+        // a few tiles per frame
+        const tex = d.ktx2 ? await parseKTX2(gl, d.ktx2) : null
+        st.queue.push({ t, d, tex })
       })
       .catch(() => st.pending.delete(t.key))
   }
@@ -225,14 +229,18 @@ export default function Terrain({ data, manifest, detail = 1.6, nearFade = 0, ma
     return null
   }
 
-  const build = ({ t, d }) => {
+  const build = ({ t, d, tex: ktex }) => {
     st.pending.delete(t.key)
-    if (!group.current) return
+    if (!group.current) {
+      ktex?.dispose()
+      return
+    }
     const dec = decimate(d.heights, T.heightSize, t.L)
     const geometry = buildGeometry(dec.h, dec.n, t.s)
-    const tex = new THREE.Texture(d.image)
+    const tex = ktex || new THREE.Texture(d.image)
     tex.flipY = false
-    tex.colorSpace = THREE.SRGBColorSpace
+    tex.wrapS = tex.wrapT = THREE.ClampToEdgeWrapping
+    if (!ktex) tex.colorSpace = THREE.SRGBColorSpace
     tex.anisotropy = Math.min(8, gl.capabilities.getMaxAnisotropy())
     tex.needsUpdate = true
     const material = new THREE.ShaderMaterial({ vertexShader: vertex, fragmentShader: fragment, fog: true, uniforms: { ...uniforms, uMap: { value: tex } } })

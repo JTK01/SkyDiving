@@ -49,9 +49,9 @@ export default function MapWorld({ map, data, manifest, mode, quality, onStats }
         data={data}
         manifest={manifest}
         detail={play ? (low ? 1.25 : 1.7) : low ? 0.75 : 0.95}
-        nearFade={play && nearReady ? 1 : 0}
+        nearFade={0} // 25 cm orthophoto near the landmark: no procedural paving
         maxTiles={low ? 80 : 140}
-        maxLevel={play ? 5 : 4} // the preview never needs the 2 km tiles
+        maxLevel={play ? 8 : 5} // L8 = 256 m tiles at 0.5 m/px; the preview stops at 4 m/px
         onStats={stats}
       />
       {stage >= 1 && <MidBuildings data={data} manifest={manifest} />}

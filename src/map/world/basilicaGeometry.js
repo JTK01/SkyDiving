@@ -64,15 +64,28 @@ class Builder {
     const c = geo.userData.collider
     const push = (o) => this.colliders.push(o)
     if (c?.type === 'tower') push({ type: 'tower', x, z, y0: y, ...c.params })
+    else if (c?.type === 'lathe') push({ type: 'lathe', x, z, y0: y, pts: c.pts.map((v) => Math.round(v * 100) / 100) })
     else if (c?.type === 'gable') push({ type: 'gable', x, y0: y, z, w: c.w, h: c.h, len: c.len, ry })
     else if (geo.type === 'BoxGeometry') push({ type: 'box', x, y, z, hx: (p.width * sx) / 2, hy: (p.height * sy) / 2, hz: (p.depth * sz) / 2, ry })
-    else if (geo.type === 'ConeGeometry') push({ type: 'cone', x, z, y0: y - (p.height * sy) / 2, h: p.height * sy, r: p.radius * sx })
-    else if (geo.type === 'CylinderGeometry') push({ type: 'cyl', x, z, y0: y - (p.height * sy) / 2, h: p.height * sy, r: Math.max(p.radiusTop, p.radiusBottom) * sx })
-    else if (geo.type === 'LatheGeometry') {
-      // finial: bounding cylinder of the lathe profile
-      const pts = p.points
-      push({ type: 'cyl', x, z, y0: y, h: pts[pts.length - 1].y * sy, r: Math.max(...pts.map((v) => v.x)) * sx })
-    } else if (p.radius && p.radius * Math.max(sx, sy, sz) >= 0.5) push({ type: 'sphere', x, y, z, r: p.radius * Math.max(sx, sy, sz) })
+    else if (geo.type === 'ConeGeometry' || geo.type === 'CylinderGeometry') {
+      // frustum of the faceted solid: radius between apothem and corner
+      const facet = (1 + Math.cos(Math.PI / p.radialSegments)) / 2
+      const cone = geo.type === 'ConeGeometry'
+      const o = { type: 'cyl', x, z, y0: y - (p.height * sy) / 2, h: p.height * sy, rb: (cone ? p.radius : p.radiusBottom) * sx * facet, rt: (cone ? 0 : p.radiusTop) * sx * facet }
+      if (p.thetaLength < Math.PI * 2 - 1e-6) {
+        // half shell (apse): keep the side facing the middle angle
+        const mid = p.thetaStart + p.thetaLength / 2 + ry
+        o.cut = [Math.sin(mid), Math.cos(mid)]
+      }
+      push(o)
+    } else if (geo.type === 'TorusGeometry') {
+      // ring laid flat (rotated about x): a thin disc
+      push({ type: 'cyl', x, z, y0: y - p.tube * sy, h: 2 * p.tube * sy, rb: (p.radius + p.tube) * sx, rt: (p.radius + p.tube) * sx })
+    } else if (p.radius && p.radius * Math.max(sx, sy, sz) >= 0.5) {
+      // icosahedra: between in- and circumradius
+      const k = p.detail ? 0.95 : 0.9
+      push({ type: 'sphere', x, y, z, r: p.radius * Math.max(sx, sy, sz) * k })
+    }
   }
   box(kind, color, size, pos, rot) {
     this.add(kind, new THREE.BoxGeometry(...size), color, pos, rot)
@@ -137,6 +150,8 @@ function finial(b, x, y, z, r, palette) {
     pts.push(new THREE.Vector2(r * (0.55 + 0.6 * Math.sin(Math.PI * Math.min(t * 1.1, 1))) * (1 - t * 0.55), t * r * 5))
   }
   const g = new THREE.LatheGeometry(pts, 10).toNonIndexed()
+  // collision outline (ρ, y): the profile closed against the axis
+  g.userData.collider = { type: 'lathe', pts: [0, 0, ...pts.flatMap((v) => [v.x, v.y]), 0, r * 5] }
   const n = g.attributes.position.count
   const c = new Float32Array(n * 3)
   for (let v = 0; v < n; v++) bands[Math.min(4, Math.floor((g.attributes.position.getY(v) / (r * 5)) * 5))].toArray(c, v * 3)
@@ -255,11 +270,5 @@ export function buildBasilica() {
 }
 
 /** radius of a tower collider at height `y` above its base (same profile as the mesh) */
-export function towerRadius(c, y) {
-  const t = y / c.H
-  if (t < 0 || t > 1) return -1
-  if (t < c.body) return c.r0 * (1 - c.taper * (t / c.body))
-  const u = (t - c.body) / (1 - c.body)
-  return Math.max(c.r0 * (1 - c.taper) * (1 - Math.pow(u, c.k)), 0.25)
-}
+export { towerRadius } from './towerProfile.js'
 

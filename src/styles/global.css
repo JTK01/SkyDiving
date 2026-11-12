@@ -1109,6 +1109,12 @@ input {
   text-align: center;
   width: min(380px, 100%);
 }
+.play-hud__end-meta {
+  margin-top: -6px;
+  font-size: 12.5px;
+  letter-spacing: 0.02em;
+  opacity: 0.72;
+}
 .play-hud__end-card .btn--ghost {
   color: #fff;
   border-color: rgba(255, 255, 255, 0.45);

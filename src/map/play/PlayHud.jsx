@@ -29,6 +29,14 @@ function FrameStats() {
 }
 const DEBUG = typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('debug')
 
+/** what the jumper touched (state.contact from DropController) */
+function contactText(c) {
+  if (!c) return '낙하가 끝났습니다.'
+  if (c.kind === 'ground') return '지면에 닿았습니다.'
+  if (c.kind === 'building') return c.part === 'roof' ? '건물 옥상에 닿았습니다.' : '건물 벽에 부딪혔습니다.'
+  return c.part === 'tower' ? '사그라다 파밀리아 첨탑에 닿았습니다.' : '사그라다 파밀리아 성당에 닿았습니다.'
+}
+
 /** skydive HUD: altitude above ground, fall speed, distance from the landmark */
 export default function PlayHud({ map, manifest, state, ended, onRestart, onExit }) {
   const alt = useRef()
@@ -38,7 +46,7 @@ export default function PlayHud({ map, manifest, state, ended, onRestart, onExit
     let id
     const tick = () => {
       if (alt.current) {
-        alt.current.textContent = Math.max(0, Math.round(state.y - manifest.frame.groundY)).toLocaleString('en-US')
+        alt.current.textContent = Math.max(0, Math.round(state.agl)).toLocaleString('en-US')
         spd.current.textContent = Math.round(state.vy * 3.6)
         dist.current.textContent = Math.round(Math.hypot(state.x, state.z))
       }
@@ -94,7 +102,12 @@ export default function PlayHud({ map, manifest, state, ended, onRestart, onExit
         <div className="play-hud__end" role="dialog" aria-label="낙하 종료">
           <div className="play-hud__end-card">
             <h2>낙하 종료</h2>
-            <p>지상 {map.world.drop.endAltitude} m에 도달했습니다.</p>
+            <p>{contactText(state.contact)}</p>
+            {state.contact && (
+              <p className="play-hud__end-meta">
+                접촉 속도 {Math.round(state.contact.speed * 3.6)} km/h · 지면에서 {Math.round(state.contact.height)} m
+              </p>
+            )}
             <button type="button" className="btn btn--primary" onClick={onRestart}>
               다시 낙하
             </button>

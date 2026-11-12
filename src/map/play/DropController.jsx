@@ -8,7 +8,9 @@ import * as THREE from 'three'
  *  - accelerates to terminal velocity (no parachute)
  *  - WASD / arrow keys steer horizontally, drag the mouse (or a finger) to look
  *  - the horizontal position is held inside `radius` m of the landmark
- *  - ends at `endAltitude` m above the ground (onEnd)
+ *  - ends the moment the body touches the terrain, a building or the
+ *    basilica (`world`: CollisionWorld, swept every frame, see collision.js);
+ *    state.contact = { kind, part, speed } and onEnd(contact)
  * The HUD reads the live state through `state` (no re-renders per frame).
  */
 const G = 9.81
@@ -23,11 +25,13 @@ export function createDropState(drop, groundY, yawDeg) {
     yaw: THREE.MathUtils.degToRad(yawDeg),
     pitch: -1.42, // almost straight down: the basilica is in the middle of the view
     ended: false,
+    contact: null,
+    agl: drop.altitude,
     t: 0,
   }
 }
 
-export default function DropController({ drop, groundY, state, onEnd, enabled = true }) {
+export default function DropController({ drop, world, state, onEnd, enabled = true }) {
   const { camera, gl } = useThree()
   const keys = useRef(new Set()).current
   const drag = useRef(null)
@@ -71,28 +75,34 @@ export default function DropController({ drop, groundY, state, onEnd, enabled = 
 
   useFrame((_, rawDt) => {
     const dt = Math.min(rawDt, 0.05)
-    if (enabled && !state.ended && !state.frozen) { // frozen: ?debug inspection only
+    if (enabled && world && !state.ended && !state.frozen) { // frozen: ?debug inspection only
+      const from = { x: state.x, y: state.y, z: state.z }
       state.t += dt
       // vertical: quadratic drag toward terminal velocity
       state.vy += G * (1 - (state.vy / drop.terminalSpeed) ** 2) * dt
-      state.y -= state.vy * dt
+      let { x, y, z } = from
+      y -= state.vy * dt
       // horizontal steering relative to the view direction
       const f = (keys.has('f') ? 1 : 0) - (keys.has('b') ? 1 : 0)
       const s = (keys.has('r') ? 1 : 0) - (keys.has('l') ? 1 : 0)
       const sp = drop.steerSpeed * dt
-      state.x += (-Math.sin(state.yaw) * f + Math.cos(state.yaw) * s) * sp
-      state.z += (-Math.cos(state.yaw) * f - Math.sin(state.yaw) * s) * sp
-      const r = Math.hypot(state.x, state.z)
+      x += (-Math.sin(state.yaw) * f + Math.cos(state.yaw) * s) * sp
+      z += (-Math.cos(state.yaw) * f - Math.sin(state.yaw) * s) * sp
+      const r = Math.hypot(x, z)
       if (r > drop.radius) {
-        state.x *= drop.radius / r
-        state.z *= drop.radius / r
+        x *= drop.radius / r
+        z *= drop.radius / r
       }
-      if (state.y - groundY <= drop.endAltitude) {
-        state.y = groundY + drop.endAltitude
+      const hit = world.sweep(from, { x, y, z })
+      if (hit) {
+        ;({ x, y, z } = hit)
         state.ended = true
-        onEnd?.()
+        state.contact = { kind: hit.kind, part: hit.part, speed: Math.hypot(state.vy, (f || s) && drop.steerSpeed), height: hit.y - world.R - hit.ground }
       }
+      Object.assign(state, { x, y, z })
+      if (state.ended) onEnd?.(state.contact)
     }
+    if (world) state.agl = state.y - world.heightAt(state.x, state.z)
     // a little buffeting at speed
     const shake = enabled && !state.ended ? (state.vy / drop.terminalSpeed) * 0.004 : 0
     camera.position.set(state.x, state.y, state.z)

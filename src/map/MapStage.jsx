@@ -5,6 +5,8 @@ import { useQuality, preset } from './quality'
 import { getMapData, releaseMapData } from './data/MapData'
 import MapWorld from './world/MapWorld'
 import DropController, { createDropState } from './play/DropController'
+import { loadCollisionWorld } from './play/collision'
+import { BASILICA_COLLIDERS_URL } from './world/Basilica'
 import PlayHud from './play/PlayHud'
 
 /**
@@ -149,7 +151,16 @@ export default function MapStage({ map, mode, anchor, fromRect, onEntered, onExi
   const orbit = map.preview.orbit
   const clock = useRef({ t: 0 }).current
   const state = useMemo(() => manifest && createDropState(drop, manifest.frame.groundY, map.world.landmark.rotationDeg), [manifest, drop, map])
-  if (state && typeof window !== 'undefined' && window.__skydive) window.__skydive.drop = { state, data }
+  const [world, setWorld] = useState(null)
+  useEffect(() => {
+    if (mode !== 'play' || !ready.play || !manifest) return
+    let live = true
+    loadCollisionWorld(data, manifest, { landmark: map.world.landmark, radius: drop.radius, collidersUrl: BASILICA_COLLIDERS_URL }).then((w) => live && setWorld(w))
+    return () => {
+      live = false
+    }
+  }, [mode, ready.play, manifest, data, map, drop])
+  if (state && typeof window !== 'undefined' && window.__skydive) window.__skydive.drop = { state, data, world }
   const [ended, setEnded] = useState(false)
   const [run, setRun] = useState(0)
   const [firstFrame, setFirstFrame] = useState(false)
@@ -176,7 +187,7 @@ export default function MapStage({ map, mode, anchor, fromRect, onEntered, onExi
           shadows={{ type: THREE.PCFSoftShadowMap }}
           dpr={1}
           gl={{ logarithmicDepthBuffer: true, antialias: false, powerPreference: 'high-performance', stencil: false }}
-          camera={{ fov: orbit.fov, near: 1, far: 120000, position: [0, manifest.frame.groundY + orbit.altitude, orbit.radius] }}
+          camera={{ fov: orbit.fov, near: 0.25, far: 120000, position: [0, manifest.frame.groundY + orbit.altitude, orbit.radius] }}
           style={{ opacity: shown && firstFrame ? 1 : 0, pointerEvents: playing ? 'auto' : 'none' }}
           onCreated={({ camera, scene, gl }) => {
             gl.toneMapping = THREE.NeutralToneMapping
@@ -192,11 +203,11 @@ export default function MapStage({ map, mode, anchor, fromRect, onEntered, onExi
           {mode === 'preview' && <PreviewOrbit orbit={orbit} groundY={manifest.frame.groundY} clock={clock} />}
           {mode === 'entering' && ready.preview && <EnterFlight to={dropPose(state)} fov={70} onDone={onEntered} />}
           <ShadowSwitch enabled={playing && preset(quality).shadows > 0} />
-          {playing && <DropController key={run} drop={drop} groundY={manifest.frame.groundY} state={state} enabled={ready.play} onEnd={() => setEnded(true)} />}
+          {playing && <DropController key={run} drop={drop} world={world} state={state} enabled={ready.play && !!world} onEnd={() => setEnded(true)} />}
         </Canvas>
       )}
-      {playing && !ready.play && <div className="map-stage__loading">LOADING DROP ZONE…</div>}
-      {playing && ready.play && <PlayHud map={map} manifest={manifest} state={state} ended={ended} onRestart={restart} onExit={onExit} />}
+      {playing && !(ready.play && world) && <div className="map-stage__loading">LOADING DROP ZONE…</div>}
+      {playing && ready.play && world && <PlayHud map={map} manifest={manifest} state={state} ended={ended} onRestart={restart} onExit={onExit} />}
     </div>
   )
 }

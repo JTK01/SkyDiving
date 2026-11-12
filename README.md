@@ -9,6 +9,7 @@ npm install
 npm run dev        # http://localhost:5173
 npm run build      # 프로덕션 빌드 (dist/)
 npm run preview    # 빌드 결과 미리보기
+npm test           # 낙하 충돌 판정 단위 테스트 (node --test)
 ```
 
 데모 계정: `demo@skydive.io` / `skydive123` (로그인 카드 하단 링크로 자동 입력). 회원가입한 계정은 브라우저 localStorage에 저장됩니다(개발용).
@@ -119,13 +120,17 @@ src/
 
 | 구역 | 표현 | 데이터 |
 |---|---|---|
-| 근거리 ≤600 m | 실제 건물 외곽선 돌출(주황 기와 지붕·창 패턴), 도로·공원·연못·가로수(≤1.3 km), 성당 고정밀 절차적 모델 | Overture Maps(OSM) |
-| 중거리 ≤2.7 km | 건물을 방향 있는 박스로 인스턴싱 | Overture Maps(OSM) |
-| 원거리 ≤32 km | 지형 쿼드트리(L0 65 km … L5 2 km), 위성 텍스처, 바다 셰이더 | Copernicus DEM GLO-30, Sentinel-2 |
+| 근거리 ≤600 m | 실제 건물 외곽선 돌출(파사드·지붕·1층 KTX2 아틀라스), 가로수(≤1.3 km), 성당 절차적 모델(meshopt glb) | Overture Maps(OSM) |
+| 중거리 ≤2.7 km | 건물을 방향 있는 박스로 인스턴싱(같은 아틀라스), 프리셋별 표시 거리 1.6/2.3/2.7 km | Overture Maps(OSM) |
+| 지형 | 쿼드트리 L0 65 km … L8 256 m, 경사·고도 재질 혼합 + 디테일 노멀 | Copernicus DEM GLO-30 |
+| 항공영상 | L5–L8(≤3 km): ICGC 25 cm 정사영상 512 px, L0–L4: Sentinel-2, 모두 KTX2(ETC1S) | ICGC(CC BY 4.0), Sentinel-2 |
 
-- 타일: `public/tiles/<map>/` (2.4 MB, JS 번들 밖). 카메라 위치에 따라 필요한 타일만 요청·업로드하고 LRU로 해제. 기본 URL `VITE_TILES_BASE_URL`, 이미지 소스 `VITE_MAP_IMAGERY`(기본 `sentinel2`). 생성 도구: `tools/map-data/`.
+- 타일: `public/tiles/<map>/` (≈8.2 MB, JS 번들 밖). 카메라 위치에 따라 필요한 타일만 요청·업로드하고 LRU로 해제. 기본 URL `VITE_TILES_BASE_URL`, 이미지 소스 `VITE_MAP_IMAGERY`(기본 `hybrid`). 생성 도구: `tools/map-data/`.
+- 렌더링: 고정 낮 태양 + RoomEnvironment IBL, 높이 감쇠 대기 원근(시선 적분 안개) + 하늘 돔, 성당 주변 ±320 m만 그림자(정적 캐시: 지오메트리가 바뀔 때만 다시 그림), Neutral 톤매핑, 하프 해상도 블룸.
+- 품질 프리셋(`src/map/quality.js`): 저/중/고 = 해상도 배율 0.6–0.85 / 0.7–1.0 / 0.85–1.0, 그림자 없음/1024/2048, 블룸 off/on/on, 타일 80/120/160, 나무 거리 500/800/1300 m. 첫 진입 시 GPU 이름으로 추정(모바일 → 저), 플레이 화면 우상단에서 수동 전환(선택 저장, `자동`으로 복귀), `?q=low|medium|high`로 강제. 해상도 배율은 1초마다 프레임 시간(목표 16.7 ms)에 맞춰 자동 조정.
 - 외곽: 하늘 지평선색 = 안개색 = 지평선 아래색이라 지형 끝(32 km)이 하늘로 녹아듭니다. 단색 바닥 없음.
-- 낙하: 성당 상공 1,200 m, WASD/방향키 + 드래그, 수평 반경 350 m, 지상 150 m에서 '낙하 종료 · 다시 낙하'.
+- 낙하: 성당 상공 1,200 m, WASD/방향키 + 드래그, 수평 반경 350 m. **지면·건물·성당에 몸(반지름 0.5 m 구)이 닿는 순간** '낙하 종료'(무엇에 닿았는지·접촉 속도·지면에서의 높이 표시).
+- 충돌(`src/map/play/collision.js`): 지형은 렌더링과 같은 삼각형(L8 4 m 격자)으로 높이 계산, 근거리 건물은 외곽선 기둥(렌더링과 같은 바닥 −2 m … 지붕), 성당은 `colliders.json`의 단순화 형상 396개(박스·박공·원뿔대·회전체·구·첨탑 — 첨탑은 그려진 단면 반지름을 끝 0.25 m까지 그대로 따름). 매 프레임 이동 구간을 0.25 m 간격으로 쓸어 검사하고 첫 접촉을 이분 탐색으로 1 cm 이내까지 좁혀 터미널 속도에서도 관통하지 않습니다. 16 m 격자로 후보만 검사. `npm test`: 첨탑 끝·첨탑 옆 스침·옥상·벽·지면·고속 관통·그려진 성당 표면과의 일치(접촉점 99 %가 0.5 m 이내) 검증.
 - 미리보기 = 같은 월드(`src/map/MapStage.jsx`, `MapStageHost.jsx`): 최저 해상도 지형(L0–L1, ≈100 kB)만으로 첫 프레임 → 중거리 건물 → 근거리 건물 → 지형 세분화(최대 L4). 로딩 중엔 같은 시점 캡처(`preview.jpg`). 패널을 닫거나 다른 맵을 고르면 캔버스·GPU 자원·타일 캐시 해제. 입장 시 같은 캔버스·캐시를 그대로 쓰며 낙하 시작점으로 카메라 비행.
 - 크레딧: 맵 화면 하단 링크, `public/tiles/ODbL-NOTICE.md`, `public/tiles/<map>/ATTRIBUTION.md`.
 
@@ -135,7 +140,8 @@ src/
 2. 주소에 `?debug`를 붙이면 콘솔에서 `__skydive.drop.state`(낙하 상태), `__skydive.mapCamera`를 볼 수 있습니다.
 3. **FPS**: Chrome DevTools → Rendering → *Frame Rendering Stats* 켜기(또는 Performance 패널 녹화). 모바일은 `chrome://inspect` 원격 디버깅으로 같은 방법.
 4. **미리보기 로딩 시간**: DevTools → Network에서 *Disable cache* + 실제 회선(또는 *Fast 4G* 스로틀) → 맵 카드 클릭 후 Performance 패널에서 클릭부터 미리보기 캔버스가 나타나는 시점(캡처 이미지 → 3D 전환)까지 측정. 중요 요청은 `manifest.json`, `height|imagery/{0,1}/…`(≈100 kB), `preview.jpg`.
-5. 품질 비교: `?tier=low` / `?tier=high`.
+5. 품질 비교: 맵 화면은 `?q=low|medium|high`(인트로 구름은 `?tier=low|high`).
+6. 맵 화면에 `?debug`를 붙이면 우상단에 1초 평균/최악 프레임 시간, 해상도 배율, 드로우콜·삼각형·지오메트리·텍스처 수가 표시됩니다.
 
 ## 디버그
 

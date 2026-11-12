@@ -39,7 +39,8 @@ export const MAPS = [
       tiles: 'sagrada-familia',
       // origin = basilica footprint centroid; the Eixample grid runs 44.25° from east
       landmark: { x: 0, z: 0, rotationDeg: 44.25 },
-      drop: { altitude: 1200, radius: 350, endAltitude: 150, terminalSpeed: 55, steerSpeed: 22 },
+      // the drop ends when the jumper touches the ground, a building or the basilica (play/collision.js)
+      drop: { altitude: 1200, radius: 350, terminalSpeed: 55, steerSpeed: 22 },
     },
     unlock: { cost: null },
   },

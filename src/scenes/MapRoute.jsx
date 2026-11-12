@@ -1,13 +1,14 @@
-import { useEffect } from 'react'
+import { lazy, Suspense, useEffect } from 'react'
 import { getMap, isPlayable } from '../data/maps'
 import { useAuth } from '../auth/AuthController'
 import { useMapAccess } from '../state/useMapAccess'
 import { useRouter } from '../router/router'
+// the 3D map is its own chunk, fetched when a map is entered
+const MapStage = lazy(() => import('../map/MapStage'))
 
 /**
- * /maps/:id — destination of the "입장" button. The map itself (drop,
- * multiplayer) is the next milestone; for now this screen confirms the
- * route and leads back to the world.
+ * /maps/:id — destination of the "입장" button: the skydive on the map's
+ * 3D world (MapStage).
  *
  * Guards: requires a signed-in user (waits for session restore) and a
  * playable, unlocked map; otherwise it redirects to the world.
@@ -30,15 +31,18 @@ export default function MapRoute({ id }) {
   }, [decided, allowed, navigate])
 
   if (!decided || !allowed) return <div className="map-route" aria-busy />
+  if (map.world)
+    return (
+      <Suspense fallback={<div className="map-stage"><div className="map-stage__loading">LOADING DROP ZONE…</div></div>}>
+        <MapStage map={map} onExit={() => navigate('/')} />
+      </Suspense>
+    )
   return (
     <section className="map-route" aria-label={map.name}>
       <div className="map-route__card">
         <span className="map-route__eyebrow">DROP ZONE</span>
         <h1>{map.name}</h1>
-        <p className="map-route__sub">
-          {map.nameEn} · {map.location}
-        </p>
-        <p className="map-route__note">맵 입장이 연결되었습니다. 낙하 콘텐츠는 다음 단계에서 구현됩니다.</p>
+        <p className="map-route__note">이 맵은 아직 준비 중입니다.</p>
         <button type="button" className="btn btn--primary" onClick={() => navigate('/')}>
           맵 선택으로 돌아가기
         </button>

@@ -9,6 +9,11 @@
  *  thumbnail  : image under /public (null → generated placeholder tile)
  *  preview    : { scene } key of the long-range preview scene
  *               (see src/three/preview/scenes.js), null when not available
+ *  world      : the playable 3D map (null = not built yet)
+ *               tiles    : tile set under VITE_TILES_BASE_URL (public/tiles/<tiles>)
+ *               landmark : position (local metres) and heading of the landmark model
+ *               drop     : skydive — start height above ground, horizontal limit,
+ *                          end height above ground, terminal & steering speed (m, m/s)
  *  unlock     : lock data for the future point-based unlock flow.
  *               cost = points needed (null = not decided yet). The per-user
  *               lock state lives in src/state/useMapAccess.js.
@@ -22,6 +27,12 @@ export const MAPS = [
     status: 'ready',
     thumbnail: '/maps/sagrada-familia/thumb.jpg',
     preview: { scene: 'sagrada-familia' },
+    world: {
+      tiles: 'sagrada-familia',
+      // origin = basilica footprint centroid; the Eixample grid runs 44.25° from east
+      landmark: { x: 0, z: 0, rotationDeg: 44.25 },
+      drop: { altitude: 1200, radius: 350, endAltitude: 150, terminalSpeed: 55, steerSpeed: 22 },
+    },
     unlock: { cost: null },
   },
   ...[2, 3, 4, 5, 6].map((n) => ({
@@ -32,6 +43,7 @@ export const MAPS = [
     status: 'coming-soon',
     thumbnail: null,
     preview: null,
+    world: null,
     unlock: { cost: null },
   })),
 ]

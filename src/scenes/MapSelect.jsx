@@ -1,12 +1,11 @@
-import { lazy, Suspense, useEffect, useState } from 'react'
+import { useEffect, useRef } from 'react'
 import { create } from 'zustand'
 import { MAPS, getMap, isPlayable } from '../data/maps'
 import { useMapAccess } from '../state/useMapAccess'
 import { useAuth } from '../auth/AuthController'
 import { useRouter, mapPath } from '../router/router'
 
-// the WebGL preview is its own chunk, loaded when a map is first previewed
-const MapPreviewCanvas = lazy(() => import('../three/preview/MapPreviewCanvas'))
+import { useMapStage } from '../map/useMapStage'
 
 /** UI selection (kept outside the component so it survives a route change) */
 export const useMapSelection = create((set) => ({
@@ -67,12 +66,27 @@ function MapCard({ map, selected, locked, mine, onSelect, disabled }) {
   )
 }
 
+/** frame of the map world preview (the world itself is drawn by MapStageHost on top of it) */
+function PreviewView({ map }) {
+  const ref = useRef()
+  useEffect(() => {
+    useMapStage.getState().showPreview(map.id, ref.current)
+    return () => {
+      const st = useMapStage.getState()
+      if (st.mode === 'preview' && st.mapId === map.id) st.hide() // closed / another map → free it
+    }
+  }, [map.id])
+  return <div className="map-preview__world" ref={ref} />
+}
+
 function Preview({ map, locked, onClose }) {
   const navigate = useRouter((s) => s.navigate)
-  const [loaded, setLoaded] = useState(false)
-  useEffect(() => setLoaded(false), [map.id])
-  const playable = isPlayable(map) && map.preview
+  const playable = isPlayable(map) && map.world
   const canEnter = playable && !locked
+  const enter = () => {
+    useMapStage.getState().enter(map.id) // keep the preview's canvas & cache, fly to the drop point
+    navigate(mapPath(map.id))
+  }
 
   return (
     <section className="map-preview" aria-label={`${map.name} 미리보기`}>
@@ -88,12 +102,7 @@ function Preview({ map, locked, onClose }) {
 
       <div className="map-preview__view">
         {playable ? (
-          <>
-            <Suspense fallback={null}>
-              <MapPreviewCanvas sceneKey={map.preview.scene} onReady={() => setLoaded(true)} />
-            </Suspense>
-            {!loaded && <div className="map-preview__loading">LOADING VIEW…</div>}
-          </>
+          <PreviewView map={map} />
         ) : (
           <div className="map-preview__soon">
             <span>COMING SOON</span>
@@ -106,7 +115,7 @@ function Preview({ map, locked, onClose }) {
         <span className="map-preview__note">
           {!playable ? '준비 중' : locked ? '잠긴 맵 · 포인트로 해금 예정' : '원거리 전경 미리보기'}
         </span>
-        <button type="button" className="map-preview__enter" disabled={!canEnter} onClick={() => navigate(mapPath(map.id))}>
+        <button type="button" className="map-preview__enter" disabled={!canEnter} onClick={enter}>
           {locked && playable ? (
             <>
               <LockIcon /> 잠김

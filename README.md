@@ -110,14 +110,36 @@ src/
 
 ## 맵 선택 (로그인 이후)
 
-- WORLD 화면 좌측의 반투명 패널(`src/scenes/MapSelect.jsx`)에 맵 목록이 표시되고, 맵을 고르면 패널 옆에 원거리 전경 미리보기(별도 WebGL 캔버스, 랜드마크 중심 자동 공전, 조작 불가)와 **입장** 버튼이 나타납니다.
-- 맵 목록은 `src/data/maps.js`의 `MAPS` 배열 하나로 관리합니다. 맵 추가 = 항목 추가(`id`, `name`, `status`, `thumbnail`, `preview.scene`, `unlock.cost`). 미리보기 3D 장면은 `src/three/preview/scenes.js`에 키로 등록합니다(지연 로딩).
-- 잠금: 사용자가 처음 선택한 플레이 가능 맵이 '내 맵'이 되고, 나머지는 잠금 아이콘. 사용자별 상태는 `src/state/useMapAccess.js`(`firstPickId`, `unlockedIds`, 현재 localStorage). 포인트 해금은 `unlock.cost` + `unlockedIds`에 추가하는 방식으로 이후 구현.
-- 라우트: `/maps/:id` (`src/router/router.js`, History API). 로그인·해금된 플레이 가능 맵만 열리고, 아니면 `/`로 돌아갑니다. 정적 호스팅 시 SPA fallback(모든 경로 → `index.html`) 설정이 필요합니다.
+- WORLD 화면 좌측의 반투명 패널(`src/scenes/MapSelect.jsx`)에 맵 목록이 표시되고, 맵을 고르면 패널 옆에 원거리 전경 미리보기와 **입장** 버튼이 나타납니다.
+- 맵 목록은 `src/data/maps.js`의 `MAPS` 배열 하나로 관리합니다. 맵 추가 = 항목 추가: `world`(타일 세트·랜드마크 위치/방향·낙하 설정), `preview`(캡처 이미지, 공전 반경·고도·주시 높이·주기·시작 방위·fov).
+- 잠금: 사용자가 처음 선택한 플레이 가능 맵이 '내 맵', 나머지는 잠금 아이콘(`src/state/useMapAccess.js`). 포인트 해금은 `unlock.cost` + `unlockedIds`로 이후 구현.
+- 라우트: `/maps/:id` (`src/router/router.js`). 정적 호스팅 시 SPA fallback 필요.
+
+## 3D 맵 (사그라다 파밀리아)
+
+| 구역 | 표현 | 데이터 |
+|---|---|---|
+| 근거리 ≤600 m | 실제 건물 외곽선 돌출(주황 기와 지붕·창 패턴), 도로·공원·연못·가로수(≤1.3 km), 성당 고정밀 절차적 모델 | Overture Maps(OSM) |
+| 중거리 ≤2.7 km | 건물을 방향 있는 박스로 인스턴싱 | Overture Maps(OSM) |
+| 원거리 ≤32 km | 지형 쿼드트리(L0 65 km … L5 2 km), 위성 텍스처, 바다 셰이더 | Copernicus DEM GLO-30, Sentinel-2 |
+
+- 타일: `public/tiles/<map>/` (2.4 MB, JS 번들 밖). 카메라 위치에 따라 필요한 타일만 요청·업로드하고 LRU로 해제. 기본 URL `VITE_TILES_BASE_URL`, 이미지 소스 `VITE_MAP_IMAGERY`(기본 `sentinel2`). 생성 도구: `tools/map-data/`.
+- 외곽: 하늘 지평선색 = 안개색 = 지평선 아래색이라 지형 끝(32 km)이 하늘로 녹아듭니다. 단색 바닥 없음.
+- 낙하: 성당 상공 1,200 m, WASD/방향키 + 드래그, 수평 반경 350 m, 지상 150 m에서 '낙하 종료 · 다시 낙하'.
+- 미리보기 = 같은 월드(`src/map/MapStage.jsx`, `MapStageHost.jsx`): 최저 해상도 지형(L0–L1, ≈100 kB)만으로 첫 프레임 → 중거리 건물 → 근거리 건물 → 지형 세분화(최대 L4). 로딩 중엔 같은 시점 캡처(`preview.jpg`). 패널을 닫거나 다른 맵을 고르면 캔버스·GPU 자원·타일 캐시 해제. 입장 시 같은 캔버스·캐시를 그대로 쓰며 낙하 시작점으로 카메라 비행.
+- 크레딧: 맵 화면 하단 링크, `public/tiles/ODbL-NOTICE.md`, `public/tiles/<map>/ATTRIBUTION.md`.
+
+### 실기기 성능 확인
+
+1. `npm run build && npm run preview -- --host` 후 휴대폰/PC 브라우저로 접속.
+2. 주소에 `?debug`를 붙이면 콘솔에서 `__skydive.drop.state`(낙하 상태), `__skydive.mapCamera`를 볼 수 있습니다.
+3. **FPS**: Chrome DevTools → Rendering → *Frame Rendering Stats* 켜기(또는 Performance 패널 녹화). 모바일은 `chrome://inspect` 원격 디버깅으로 같은 방법.
+4. **미리보기 로딩 시간**: DevTools → Network에서 *Disable cache* + 실제 회선(또는 *Fast 4G* 스로틀) → 맵 카드 클릭 후 Performance 패널에서 클릭부터 미리보기 캔버스가 나타나는 시점(캡처 이미지 → 3D 전환)까지 측정. 중요 요청은 `manifest.json`, `height|imagery/{0,1}/…`(≈100 kB), `preview.jpg`.
+5. 품질 비교: `?tier=low` / `?tier=high`.
 
 ## 디버그
 
-`?debug`를 붙여 열면 `window.__skydive`(`gsap`, `cine`, `getActiveTimeline`, `cloudMs` = 구름 갱신 CPU 시간)가 노출됩니다. 예: 콘솔에서 `__skydive.getActiveTimeline().pause().seek(1.5)`로 전환 장면의 특정 시점을 멈춰 볼 수 있습니다.
+`?debug`를 붙여 열면 `window.__skydive`(`gsap`, `cine`, `getActiveTimeline`, `cloudMs` = 구름 갱신 CPU 시간, 맵 화면에선 `drop`·`mapCamera`·`mapScene`, 캡처용 `orbitFrozen`)가 노출됩니다. 예: 콘솔에서 `__skydive.getActiveTimeline().pause().seek(1.5)`로 전환 장면의 특정 시점을 멈춰 볼 수 있습니다.
 
 ## 실제 인증 백엔드 연결
 

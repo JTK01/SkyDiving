@@ -15,6 +15,23 @@ export default function MapWorld({ map, data, manifest, mode, quality, onStats }
   const play = mode === 'play'
   const low = quality.tier === 'low'
   const [nearReady, setNearReady] = useState(false)
+  // preview: terrain alone makes the first frame; then mid-zone boxes, then
+  // the near-zone footprints (60 kB) so the city around the landmark is
+  // complete. Roads & trees stay play-only.
+  const [stage, setStage] = useState(play ? 2 : 0) // 0 terrain · 1 + mid · 2 + near
+  const [drawn, setDrawn] = useState(false)
+  useEffect(() => {
+    if (play) setStage(2)
+  }, [play])
+  useEffect(() => {
+    if (!drawn || stage >= 2) return
+    const id = setTimeout(() => setStage((x) => x + 1), stage === 0 ? 100 : 700)
+    return () => clearTimeout(id)
+  }, [drawn, stage])
+  const stats = (st) => {
+    if (st.drawn > 0 && !drawn) setDrawn(true)
+    onStats?.(st)
+  }
   useEffect(() => {
     if (!play) return
     let live = true
@@ -34,10 +51,11 @@ export default function MapWorld({ map, data, manifest, mode, quality, onStats }
         detail={play ? (low ? 1.25 : 1.7) : low ? 0.75 : 0.95}
         nearFade={play && nearReady ? 1 : 0}
         maxTiles={low ? 80 : 140}
-        onStats={onStats}
+        maxLevel={play ? 5 : 4} // the preview never needs the 2 km tiles
+        onStats={stats}
       />
-      <MidBuildings data={data} manifest={manifest} />
-      {play && <NearBuildings data={data} />}
+      {stage >= 1 && <MidBuildings data={data} manifest={manifest} />}
+      {stage >= 2 && <NearBuildings data={data} />}
       {play && <Features data={data} treeStride={low ? 3 : 1} />}
       <Basilica position={[lm.x, manifest.frame.groundY, lm.z]} rotation={[0, THREE.MathUtils.degToRad(lm.rotationDeg), 0]} />
     </>

@@ -4,11 +4,15 @@
  * Adding a map = adding an entry here (no component changes needed):
  *  id         : URL-safe id, also the route  →  /maps/<id>
  *  name       : display name (Korean), nameEn / location: secondary lines
- *  status     : 'ready'        — playable, has a preview scene
+ *  status     : 'ready'        — playable (has a world)
  *               'coming-soon'  — placeholder card ("준비 중"), cannot be entered
  *  thumbnail  : image under /public (null → generated placeholder tile)
- *  preview    : { scene } key of the long-range preview scene
- *               (see src/three/preview/scenes.js), null when not available
+ *  preview    : long-range preview of `world` (same assets, mid/far detail)
+ *               capture : image of the first preview frame, shown while loading
+ *               orbit   : camera orbit around the landmark — radius (m),
+ *                         altitude above ground (m), lookAt height above ground
+ *                         (m), period (s per revolution), startDeg (bearing
+ *                         of the camera from the landmark, 0 = south, 90 = east), fov
  *  world      : the playable 3D map (null = not built yet)
  *               tiles    : tile set under VITE_TILES_BASE_URL (public/tiles/<tiles>)
  *               landmark : position (local metres) and heading of the landmark model
@@ -26,7 +30,11 @@ export const MAPS = [
     location: 'Barcelona, Spain',
     status: 'ready',
     thumbnail: '/maps/sagrada-familia/thumb.jpg',
-    preview: { scene: 'sagrada-familia' },
+    preview: {
+      capture: '/maps/sagrada-familia/preview.jpg',
+      // from the south-west looking north-east: Collserola on the left, the coast on the right
+      orbit: { radius: 2100, altitude: 1250, lookAt: 300, period: 150, startDeg: 315, fov: 50 },
+    },
     world: {
       tiles: 'sagrada-familia',
       // origin = basilica footprint centroid; the Eixample grid runs 44.25° from east

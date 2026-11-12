@@ -1113,3 +1113,29 @@ input {
   color: #fff;
   border-color: rgba(255, 255, 255, 0.45);
 }
+
+/* map world stage: preview frame → full screen */
+.map-stage {
+  position: fixed;
+  overflow: hidden;
+}
+.map-stage--preview {
+  z-index: 16; /* above the world HUD, inside the preview frame */
+  background: transparent;
+  pointer-events: none;
+}
+.map-stage--entering {
+  z-index: 60;
+  transition: left 0.9s var(--ease), top 0.9s var(--ease), width 0.9s var(--ease), height 0.9s var(--ease), border-radius 0.9s var(--ease);
+}
+.map-stage__capture {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.map-preview__world {
+  position: absolute;
+  inset: 0;
+}

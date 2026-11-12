@@ -1,14 +1,13 @@
-import { lazy, Suspense, useEffect } from 'react'
+import { useEffect } from 'react'
 import { getMap, isPlayable } from '../data/maps'
 import { useAuth } from '../auth/AuthController'
 import { useMapAccess } from '../state/useMapAccess'
 import { useRouter } from '../router/router'
-// the 3D map is its own chunk, fetched when a map is entered
-const MapStage = lazy(() => import('../map/MapStage'))
+import { useMapStage } from '../map/useMapStage'
 
 /**
  * /maps/:id — destination of the "입장" button: the skydive on the map's
- * 3D world (MapStage).
+ * 3D world (MapStage, hosted by MapStageHost).
  *
  * Guards: requires a signed-in user (waits for session restore) and a
  * playable, unlocked map; otherwise it redirects to the world.
@@ -30,13 +29,16 @@ export default function MapRoute({ id }) {
     if (decided && !allowed) navigate('/', { replace: true })
   }, [decided, allowed, navigate])
 
+  // show the map world in play mode (unless it is already flying in from
+  // the preview — same canvas, same cache). MapStageHost renders it.
+  useEffect(() => {
+    if (!decided || !allowed || !map.world) return
+    const st = useMapStage.getState()
+    if (!(st.mapId === map.id && (st.mode === 'entering' || st.mode === 'play'))) st.play(map.id)
+  }, [decided, allowed, map])
+
   if (!decided || !allowed) return <div className="map-route" aria-busy />
-  if (map.world)
-    return (
-      <Suspense fallback={<div className="map-stage"><div className="map-stage__loading">LOADING DROP ZONE…</div></div>}>
-        <MapStage map={map} onExit={() => navigate('/')} />
-      </Suspense>
-    )
+  if (map.world) return null // rendered by MapStageHost
   return (
     <section className="map-route" aria-label={map.name}>
       <div className="map-route__card">

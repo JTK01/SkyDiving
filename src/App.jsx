@@ -5,6 +5,7 @@ import IntroScene from './scenes/IntroScene'
 import AuthStage from './scenes/AuthStage'
 import MetaverseScene from './scenes/MetaverseScene'
 import MapRoute from './scenes/MapRoute'
+import MapStageHost from './map/MapStageHost'
 import { useRouter } from './router/router'
 import { runIntro, getActiveTimeline } from './scenes/CloudTransition'
 import { cine } from './state/cinematic'
@@ -41,6 +42,7 @@ export default function App() {
         {authMounted && <AuthStage />}
         {!onMap && <MetaverseScene />}
         {onMap && <MapRoute id={route.params.id} />}
+        <MapStageHost />
         <div className="veil" ref={veil} aria-hidden>
           <span>SKY DIVE</span>
         </div>

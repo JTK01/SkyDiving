@@ -157,11 +157,11 @@ function buildGeometry(heights, n, size) {
   return g
 }
 
-export default function Terrain({ data, manifest, detail = 1.6, nearFade = 0, maxTiles = 140, onStats }) {
+export default function Terrain({ data, manifest, detail = 1.6, nearFade = 0, maxTiles = 140, maxLevel = 5, buildPerFrame = 3, onStats }) {
   const { camera, gl } = useThree()
   const group = useRef()
   const [, setTick] = useState(0)
-  const st = useRef({ gpu: new Map(), wanted: new Set(), drawn: [], frame: 0, loaded: new Set(), pending: new Set() }).current
+  const st = useRef({ gpu: new Map(), wanted: new Set(), drawn: [], frame: 0, loaded: new Set(), pending: new Set(), queue: [] }).current
   const T = manifest.terrain
 
   const uniforms = useMemo(
@@ -187,27 +187,7 @@ export default function Terrain({ data, manifest, detail = 1.6, nearFade = 0, ma
     data
       .terrainTile(t.L, t.i, t.j)
       .then((d) => {
-        st.pending.delete(t.key)
-        if (!group.current) return
-        const dec = decimate(d.heights, T.heightSize, t.L)
-        const geometry = buildGeometry(dec.h, dec.n, t.s)
-        const tex = new THREE.Texture(d.image)
-        tex.flipY = false
-        tex.colorSpace = THREE.SRGBColorSpace
-        tex.anisotropy = Math.min(8, gl.capabilities.getMaxAnisotropy())
-        tex.needsUpdate = true
-        const material = new THREE.ShaderMaterial({ vertexShader: vertex, fragmentShader: fragment, fog: true, uniforms: { ...uniforms, uMap: { value: tex } } })
-        const mesh = new THREE.Mesh(geometry, material)
-        mesh.position.set(t.x0, 0, t.z0)
-        mesh.matrixAutoUpdate = false
-        mesh.updateMatrix()
-        mesh.receiveShadow = true
-        mesh.visible = false
-        mesh.frustumCulled = true
-        group.current.add(mesh)
-        st.gpu.set(t.key, { mesh, tex, used: performance.now() })
-        st.loaded.add(t.key)
-        st.dirty = true
+        st.queue.push({ t, d }) // GPU upload happens in useFrame, a few tiles per frame
       })
       .catch(() => st.pending.delete(t.key))
   }
@@ -220,7 +200,7 @@ export default function Terrain({ data, manifest, detail = 1.6, nearFade = 0, ma
     const dz = Math.max(Math.abs(cam.z - cz) - t.s / 2, 0)
     const d = Math.hypot(dx, dz, Math.max(cam.y - 60, 0))
     const kids = [0, 1, 2, 3].map((q) => tileInfo(t.L + 1, t.i * 2 + (q % 2), t.j * 2 + (q >> 1)))
-    const split = d < t.s * detail && kids.every((k) => T.has.has(k.key))
+    const split = t.L < maxLevel && d < t.s * detail && kids.every((k) => T.has.has(k.key))
     st.wanted.add(t.key)
     request(t) // ancestors are always fetched: they are the fallback
     if (!split) {
@@ -245,8 +225,36 @@ export default function Terrain({ data, manifest, detail = 1.6, nearFade = 0, ma
     return null
   }
 
+  const build = ({ t, d }) => {
+    st.pending.delete(t.key)
+    if (!group.current) return
+    const dec = decimate(d.heights, T.heightSize, t.L)
+    const geometry = buildGeometry(dec.h, dec.n, t.s)
+    const tex = new THREE.Texture(d.image)
+    tex.flipY = false
+    tex.colorSpace = THREE.SRGBColorSpace
+    tex.anisotropy = Math.min(8, gl.capabilities.getMaxAnisotropy())
+    tex.needsUpdate = true
+    const material = new THREE.ShaderMaterial({ vertexShader: vertex, fragmentShader: fragment, fog: true, uniforms: { ...uniforms, uMap: { value: tex } } })
+    const mesh = new THREE.Mesh(geometry, material)
+    mesh.position.set(t.x0, 0, t.z0)
+    mesh.matrixAutoUpdate = false
+    mesh.updateMatrix()
+    mesh.receiveShadow = true
+    mesh.visible = false
+    group.current.add(mesh)
+    st.gpu.set(t.key, { mesh, tex, used: performance.now() })
+    st.loaded.add(t.key)
+    st.dirty = true
+  }
+
   useFrame((state, dt) => {
     uniforms.uTime.value += dt
+    // upload a few decoded tiles per frame, coarsest first (keeps frames short)
+    if (st.queue.length) {
+      st.queue.sort((a, b) => a.t.L - b.t.L)
+      for (const item of st.queue.splice(0, buildPerFrame)) build(item)
+    }
     uniforms.uNear.value.y += (nearFade - uniforms.uNear.value.y) * Math.min(1, dt * 2)
     if (++st.frame % 6 !== 0 && !st.dirty) return
     st.dirty = false

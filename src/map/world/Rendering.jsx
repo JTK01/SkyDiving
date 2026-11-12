@@ -19,16 +19,25 @@ export function PostFX({ samples = 0 }) {
   const composer = useMemo(() => {
     const target = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, samples })
     const c = new EffectComposer(gl, target)
+    // Render → bloom (in place) → output to screen never needs a ping-pong:
+    // everything happens in readBuffer (renderTarget2, the MSAA clone).
+    // renderTarget1 stays 1×1 (a full-size multisampled half-float copy would
+    // cost 1920×1080×8×samples bytes + depth for nothing).
+    c.renderTarget1.samples = 0
+    c.renderTarget1.depthBuffer = false
     c.addPass(new RenderPass(scene, camera))
     const bloom = new UnrealBloomPass(new THREE.Vector2(256, 256), 0.16, 0.4, 1.0) // only true highlights
     c.addPass(bloom)
-    c.addPass(new OutputPass())
+    const output = new OutputPass()
+    output.needsSwap = false // keep readBuffer as the scene target every frame
+    c.addPass(output)
     c.bloom = bloom
     return c
   }, [gl, scene, camera, samples])
   useEffect(() => {
     composer.setPixelRatio(dpr)
     composer.setSize(size.width, size.height)
+    composer.renderTarget1.setSize(1, 1)
     // bloom at half resolution (UnrealBloomPass halves again internally per mip)
     composer.bloom.setSize(Math.round((size.width * dpr) / 2), Math.round((size.height * dpr) / 2))
   }, [composer, size, dpr])

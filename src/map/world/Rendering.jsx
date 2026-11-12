@@ -5,7 +5,7 @@ import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js'
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js'
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js'
-import { useQuality, preset } from '../quality'
+import { useQuality, preset, FIXED_SCALE, frameLog, gpuName } from '../quality'
 
 /**
  * Light post-processing: scene → half-float target, a weak half-resolution
@@ -15,6 +15,7 @@ import { useQuality, preset } from '../quality'
  */
 export function PostFX({ samples = 0 }) {
   const { gl, scene, camera, size } = useThree()
+  const dpr = useThree((s) => s.viewport.dpr)
   const composer = useMemo(() => {
     const target = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, samples })
     const c = new EffectComposer(gl, target)
@@ -26,11 +27,11 @@ export function PostFX({ samples = 0 }) {
     return c
   }, [gl, scene, camera, samples])
   useEffect(() => {
-    composer.setPixelRatio(gl.getPixelRatio())
+    composer.setPixelRatio(dpr)
     composer.setSize(size.width, size.height)
     // bloom at half resolution (UnrealBloomPass halves again internally per mip)
-    composer.bloom.setSize(Math.round((size.width * gl.getPixelRatio()) / 2), Math.round((size.height * gl.getPixelRatio()) / 2))
-  })
+    composer.bloom.setSize(Math.round((size.width * dpr) / 2), Math.round((size.height * dpr) / 2))
+  }, [composer, size, dpr])
   useEffect(() => () => composer.dispose(), [composer])
   useFrame(() => composer.render(), 1)
   return null
@@ -42,17 +43,21 @@ export function PostFX({ samples = 0 }) {
  * Also counts draw calls / triangles per frame (gl.info) for the HUD.
  */
 export function AutoResolution({ quality }) {
-  const { gl, setDpr } = useThree()
-  const st = useRef({ t: 0, n: 0, sum: 0, worst: 0, scale: preset(quality).dpr[1] })
+  const gl = useThree((s) => s.gl)
+  // the Canvas reads its dpr from the store (a setDpr() here would be undone
+  // by the Canvas' own dpr prop on its next render)
+  const setDpr = (v) => useQuality.setState({ dpr: v })
+  const st = useRef({ t: 0, n: 0, sum: 0, worst: 0, scale: FIXED_SCALE ?? preset(quality).dpr[1] })
   const base = Math.min(window.devicePixelRatio || 1, 1.5)
   useEffect(() => {
     gl.info.autoReset = false
-    st.current.scale = preset(quality).dpr[1]
+    st.current.scale = FIXED_SCALE ?? preset(quality).dpr[1]
     setDpr(base * st.current.scale)
+    frameLog.info = { gpu: gpuName(gl), preset: quality }
     return () => {
       gl.info.autoReset = true
     }
-  }, [gl, quality, setDpr, base])
+  }, [gl, quality, base]) // eslint-disable-line react-hooks/exhaustive-deps
   // priority 0 only: a positive priority would switch off R3F's own render.
   // gl.info accumulates over the previous frame (all passes), read then reset.
   useFrame((_, dt) => {
@@ -63,6 +68,7 @@ export function AutoResolution({ quality }) {
     s.calls = calls
     s.tris = triangles
     const ms = dt * 1000
+    if (frameLog.recording) frameLog.ms.push(ms)
     s.n++
     s.sum += ms
     s.worst = Math.max(s.worst, ms)
@@ -71,7 +77,8 @@ export function AutoResolution({ quality }) {
     const avg = s.sum / s.n
     const [lo, hi] = preset(quality).dpr
     let next = s.scale
-    if (avg > 17.5) next = Math.max(lo, s.scale - 0.05)
+    if (FIXED_SCALE) next = s.scale
+    else if (avg > 17.5) next = Math.max(lo, s.scale - 0.05)
     else if (avg < 13) next = Math.min(hi, s.scale + 0.05)
     if (next !== s.scale) {
       s.scale = next

@@ -141,7 +141,8 @@ src/
 3. **FPS**: Chrome DevTools → Rendering → *Frame Rendering Stats* 켜기(또는 Performance 패널 녹화). 모바일은 `chrome://inspect` 원격 디버깅으로 같은 방법.
 4. **미리보기 로딩 시간**: DevTools → Network에서 *Disable cache* + 실제 회선(또는 *Fast 4G* 스로틀) → 맵 카드 클릭 후 Performance 패널에서 클릭부터 미리보기 캔버스가 나타나는 시점(캡처 이미지 → 3D 전환)까지 측정. 중요 요청은 `manifest.json`, `height|imagery/{0,1}/…`(≈100 kB), `preview.jpg`.
 5. 품질 비교: 맵 화면은 `?q=low|medium|high`(인트로 구름은 `?tier=low|high`).
-6. 맵 화면에 `?debug`를 붙이면 우상단에 1초 평균/최악 프레임 시간, 해상도 배율, 드로우콜·삼각형·지오메트리·텍스처 수가 표시됩니다.
+6. **낙하 벤치마크(권장)**: `/maps/sagrada-familia?bench&q=medium` — 손대지 않으면 1,200 m에서 자동으로 천천히 회전하며 수평선 쪽으로 고개를 들고 낙하해 성당 첨탑에 닿습니다(약 25초). 종료 창에 평균 fps, 1% low(99 백분위 프레임 시간), 최저 fps, 30 fps 미만 프레임 비율, 버퍼 해상도, GPU 이름이 표시되고 콘솔에 `[bench] {...}` JSON이 찍힙니다(첫 1초 = 셰이더 컴파일·업로드는 제외하고 최악값만 따로 표시). 해상도 배율을 고정하려면 `&scale=1`(자동 조정 끔).
+7. 맵 화면에 `?debug`를 붙이면 우상단에 1초 평균/최악 프레임 시간, 해상도 배율, 드로우콜·삼각형·지오메트리·텍스처 수가 표시됩니다.
 
 ## 디버그
 

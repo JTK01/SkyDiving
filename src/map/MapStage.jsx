@@ -144,6 +144,7 @@ function useStageRect(mode, anchor, fromRect) {
 export default function MapStage({ map, mode, anchor, fromRect, onEntered, onExit }) {
   const quality = useQuality((q) => q.name)
   const resolveQuality = useQuality((q) => q.resolve)
+  const dpr = useQuality((q) => q.dpr) ?? 1
   const data = useMemo(() => getMapData(map.world.tiles), [map.world.tiles])
   useEffect(() => () => releaseMapData(map.world.tiles), [map.world.tiles]) // free the cache when the stage goes away
   const { manifest, ready } = useEssentials(data, mode)
@@ -185,7 +186,7 @@ export default function MapStage({ map, mode, anchor, fromRect, onEntered, onExi
         <Canvas
           className="map-stage__canvas"
           shadows={{ type: THREE.PCFSoftShadowMap }}
-          dpr={1}
+          dpr={dpr}
           gl={{ logarithmicDepthBuffer: true, antialias: false, powerPreference: 'high-performance', stencil: false }}
           camera={{ fov: orbit.fov, near: 0.25, far: 120000, position: [0, manifest.frame.groundY + orbit.altitude, orbit.radius] }}
           style={{ opacity: shown && firstFrame ? 1 : 0, pointerEvents: playing ? 'auto' : 'none' }}

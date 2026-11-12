@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react'
 import { useFrame, useThree } from '@react-three/fiber'
 import * as THREE from 'three'
+import { BENCH, frameLog, summarizeFrames } from '../quality'
 
 /**
  * Free fall above the landmark.
@@ -77,7 +78,17 @@ export default function DropController({ drop, world, state, onEnd, enabled = tr
     const dt = Math.min(rawDt, 0.05)
     if (enabled && world && !state.ended && !state.frozen) { // frozen: ?debug inspection only
       const from = { x: state.x, y: state.y, z: state.z }
+      if (state.t === 0) {
+        // frame-time log of this drop (shown with ?bench / ?debug)
+        frameLog.ms = []
+        frameLog.recording = true
+      }
       state.t += dt
+      if (BENCH) {
+        // hands-off benchmark: slow pan, tilting from straight down toward the horizon
+        state.yaw += 0.12 * dt
+        state.pitch = -1.42 + Math.min(1, state.t / 12) * 0.9
+      }
       // vertical: quadratic drag toward terminal velocity
       state.vy += G * (1 - (state.vy / drop.terminalSpeed) ** 2) * dt
       let { x, y, z } = from
@@ -100,7 +111,14 @@ export default function DropController({ drop, world, state, onEnd, enabled = tr
         state.contact = { kind: hit.kind, part: hit.part, speed: Math.hypot(state.vy, (f || s) && drop.steerSpeed), height: hit.y - world.R - hit.ground }
       }
       Object.assign(state, { x, y, z })
-      if (state.ended) onEnd?.(state.contact)
+      if (state.ended) {
+        frameLog.recording = false
+        const sum = summarizeFrames(frameLog.ms)
+        state.bench = sum && { ...sum, ...frameLog.info, buffer: `${gl.domElement.width}×${gl.domElement.height}`, css: `${gl.domElement.clientWidth}×${gl.domElement.clientHeight}`, dpr: window.devicePixelRatio || 1 }
+        if (window.__skydive) window.__skydive.bench = state.bench
+        if (state.bench) console.info('[bench]', JSON.stringify(state.bench))
+        onEnd?.(state.contact)
+      }
     }
     if (world) state.agl = state.y - world.heightAt(state.x, state.z)
     // a little buffeting at speed

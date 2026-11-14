@@ -85,16 +85,15 @@ def roof(kind, seed):
         x = np.arange(C)[None, :]
         rows = (y % 11) / 11.0
         wave = 0.5 + 0.5 * np.cos((x % 9) / 9.0 * 2 * np.pi)
-        shade = 0.72 + 0.28 * rows * (0.7 + 0.3 * wave)
-        base = np.array([184, 92, 58], np.float32)
+        shade = 0.86 + 0.14 * rows * (0.7 + 0.3 * wave)
+        # muted terracotta of the reference photos (22–25: #bb846d / #8f5e53)
+        base = np.array([178, 118, 92], np.float32)
         n = noise(C, 8, seed)
         img = base[None, None, :] * shade[..., None] * (0.85 + 0.25 * n[..., None])
-        # ridge lines every 8 m
-        img[(np.arange(C) % 256) < 4, :] *= 0.8
         return img
     if kind == 'terrace':
         n = noise(C, 24, seed, 3)
-        img = np.array([206, 196, 178], np.float32)[None, None, :] * (0.88 + 0.18 * n[..., None])
+        img = np.array([206, 182, 160], np.float32)[None, None, :] * (0.88 + 0.18 * n[..., None])  # photo cluster #c5b0a3, warm
         im = Image.fromarray(np.clip(img, 0, 255).astype(np.uint8))
         d = ImageDraw.Draw(im)
         for k in range(0, C, 64):  # paving joints
@@ -106,7 +105,7 @@ def roof(kind, seed):
         return np.asarray(im, np.float32)
     if kind == 'concrete':
         n = noise(C, 12, seed, 3)
-        img = np.array([150, 150, 148], np.float32)[None, None, :] * (0.85 + 0.2 * n[..., None])
+        img = np.array([158, 151, 148], np.float32)[None, None, :] * (0.85 + 0.2 * n[..., None])  # photo cluster #9c9190
         im = Image.fromarray(np.clip(img, 0, 255).astype(np.uint8))
         d = ImageDraw.Draw(im)
         for k in range(6):
@@ -114,11 +113,10 @@ def roof(kind, seed):
             d.rectangle([x, y, x + 60, y + 40], fill=(110, 112, 116))
             d.rectangle([x + 4, y + 4, x + 56, y + 36], fill=(170, 176, 182))
         return np.asarray(im, np.float32)
-    # mixed: tiles on half, terrace on the other
+    # mixed: blotches of tiles and terrace (no straight split → no stripes across big roofs)
     a = roof('tiles', seed)
     b = roof('terrace', seed + 9)
-    m = np.zeros((C, C, 1), np.float32)
-    m[:, : C // 2] = 1
+    m = np.clip((noise(C, 3, seed + 5, 3) - 0.45) * 6, 0, 1)[..., None]
     return a * m + b * (1 - m)
 
 

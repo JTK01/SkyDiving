@@ -12,8 +12,11 @@ import { withAerial } from './aerial'
  * `aBase` = ground height (instanced boxes read both from the instance).
  * textureGrad with continuous coordinates avoids mip seams at cell wraps.
  */
-export const ROOF_CELL_NEAR = [0, 0, 0, 0, 3, 1, 2, 0] // roof palette index → atlas roof cell
-export const ROOF_CELL_MID = [0, 3, 1, 1, 2, 0, 1, 2]
+// roof palette index → atlas roof cell (0 tiles, 1 terrace, 2 concrete, 3 mixed).
+// Mix from the reference photos (22–25): mostly light terraces and grey
+// roofs, terracotta on about a third of them (tiles or mixed).
+export const ROOF_CELL_NEAR = [1, 0, 1, 3, 0, 1, 3, 2]
+export const ROOF_CELL_MID = [1, 3, 0, 1, 0, 3, 2, 1]
 
 export function buildingMaterial({ instanced, atlas }) {
   const m = new THREE.MeshStandardMaterial({ roughness: 0.88, metalness: 0, envMapIntensity: 0.8 })

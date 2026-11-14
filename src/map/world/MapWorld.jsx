@@ -48,9 +48,9 @@ export default function MapWorld({ map, data, manifest, mode, quality, onStats }
         onStats={stats}
       />
       {stage >= 1 && <MidBuildings data={data} manifest={manifest} atlas={atlas} maxDistance={play ? Q.midDistance : 2700} />}
-      {stage >= 2 && <NearBuildings data={data} atlas={atlas} onLoaded={bump} />}
-      {play && <Features data={data} treeStride={Q.treeStride} treeDistance={Q.treeDistance} onLoaded={bump} />}
-      <Basilica position={[lm.x, groundY, lm.z]} rotation={[0, THREE.MathUtils.degToRad(lm.rotationDeg), 0]} onLoaded={bump} />
+      {stage >= 2 && <NearBuildings data={data} atlas={atlas} onLoaded={bump} onLevel={bump} />}
+      {play && <Features data={data} treeStride={Q.treeStride} treeDistance={Q.treeDistance} onLoaded={bump} onLevel={bump} />}
+      <Basilica position={[lm.x, groundY, lm.z]} rotation={[0, THREE.MathUtils.degToRad(lm.rotationDeg), 0]} onLoaded={bump} onLevel={bump} />
       {Q.bloom && <PostFX samples={Q.msaa} />}
       <AutoResolution quality={quality} />
     </>

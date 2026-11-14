@@ -14,7 +14,9 @@ const here = path.dirname(fileURLToPath(import.meta.url))
 const out = path.resolve(here, '../../public/models/sagrada-familia')
 fs.mkdirSync(out, { recursive: true })
 
-const { stone, mosaic, colliders } = buildBasilica()
+// two levels of detail: lod 0 near (all ornament), lod 1 far (main masses)
+const LODS = [buildBasilica({ lod: 0 }), buildBasilica({ lod: 1 })]
+const { colliders } = LODS[0]
 
 // --- minimal glTF 2.0 binary writer -------------------------------------
 const chunks = []
@@ -42,7 +44,8 @@ function primitive(g, tower) {
   }
   const attributes = {
     POSITION: addAccessor(pos, 'VEC3', 3, { min, max }),
-    NORMAL: addAccessor(g.attributes.normal.array, 'VEC3', 3),
+    // no NORMAL: every material shades flat (normals from screen-space
+    // derivatives), so triangles share vertices and the file stays small
     COLOR_0: addAccessor(g.attributes.color.array, 'VEC3', 3),
   }
   if (tower) {
@@ -61,19 +64,30 @@ function primitive(g, tower) {
   }
   return { attributes, material: tower ? 0 : 1 }
 }
+const KINDS = ['stone', 'mosaic', 'glass']
+const MATS = {
+  stone: { name: 'stone', pbrMetallicRoughness: { baseColorFactor: [1, 1, 1, 1], metallicFactor: 0, roughnessFactor: 0.88 } },
+  mosaic: { name: 'mosaic', pbrMetallicRoughness: { baseColorFactor: [1, 1, 1, 1], metallicFactor: 0.1, roughnessFactor: 0.3 } },
+  glass: { name: 'glass', pbrMetallicRoughness: { baseColorFactor: [1, 1, 1, 1], metallicFactor: 0.2, roughnessFactor: 0.15 } },
+}
+const meshes = []
+const nodes = []
+LODS.forEach((L, lod) => {
+  for (const kind of KINDS) {
+    if (!L[kind]) continue
+    const prim = primitive(L[kind], kind === 'stone')
+    prim.material = KINDS.indexOf(kind)
+    meshes.push({ name: `${kind}_lod${lod}`, primitives: [prim] })
+    nodes.push({ name: `${kind}_lod${lod}`, mesh: meshes.length - 1 })
+  }
+})
 const json = {
   asset: { version: '2.0', generator: 'sky-dive build_basilica.mjs' },
   scene: 0,
-  scenes: [{ nodes: [0, 1] }],
-  nodes: [
-    { name: 'stone', mesh: 0 },
-    { name: 'mosaic', mesh: 1 },
-  ],
-  materials: [
-    { name: 'stone', pbrMetallicRoughness: { baseColorFactor: [1, 1, 1, 1], metallicFactor: 0, roughnessFactor: 0.88 } },
-    { name: 'mosaic', pbrMetallicRoughness: { baseColorFactor: [1, 1, 1, 1], metallicFactor: 0.1, roughnessFactor: 0.3 } },
-  ],
-  meshes: [{ name: 'stone', primitives: [primitive(stone, true)] }, { name: 'mosaic', primitives: [primitive(mosaic, false)] }],
+  scenes: [{ nodes: nodes.map((_, k) => k) }],
+  nodes,
+  materials: KINDS.map((k) => MATS[k]),
+  meshes,
 }
 json.accessors = accessors
 json.bufferViews = bufferViews

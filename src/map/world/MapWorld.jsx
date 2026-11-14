@@ -4,6 +4,7 @@ import Atmosphere from './Atmosphere'
 import Terrain from './Terrain'
 import { MidBuildings, NearBuildings, useAtlas } from './Buildings'
 import Features from './Features'
+import Trees from './Trees'
 import Basilica from './Basilica'
 import { PostFX, AutoResolution } from './Rendering'
 import { preset } from '../quality'
@@ -48,8 +49,9 @@ export default function MapWorld({ map, data, manifest, mode, quality, onStats }
         onStats={stats}
       />
       {stage >= 1 && <MidBuildings data={data} manifest={manifest} atlas={atlas} maxDistance={play ? Q.midDistance : 2700} />}
-      {stage >= 2 && <NearBuildings data={data} atlas={atlas} onLoaded={bump} onLevel={bump} />}
-      {play && <Features data={data} treeStride={Q.treeStride} treeDistance={Q.treeDistance} onLoaded={bump} onLevel={bump} />}
+      {stage >= 2 && <NearBuildings data={data} atlas={atlas} onLoaded={bump} />}
+      {play && <Features data={data} />}
+      {play && <Trees data={data} stride={Q.treeStride} near={Q.treeNear} mid={Q.treeMid} far={Q.treeDistance} msaa={Q.bloom ? Q.msaa : 0} />}
       <Basilica position={[lm.x, groundY, lm.z]} rotation={[0, THREE.MathUtils.degToRad(lm.rotationDeg), 0]} onLoaded={bump} onLevel={bump} />
       {Q.bloom && <PostFX samples={Q.msaa} />}
       <AutoResolution quality={quality} />

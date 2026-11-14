@@ -1,11 +1,9 @@
 import { useEffect, useMemo, useState } from 'react'
 import * as THREE from 'three'
-import { useFrame, useThree } from '@react-three/fiber'
-import { withAerial } from './aerial'
 
 /**
  * Near-zone ground detail from map data (≤ 1.3 km): roads as ribbons,
- * parks / plazas / playgrounds / ponds as polygons, and street & park trees.
+ * parks / plazas / playgrounds / ponds as polygons (trees: Trees.jsx).
  * Lifted slightly above the terrain (whose near zone is shaded as paving).
  */
 const AREA_COLOR = {
@@ -70,8 +68,7 @@ function toMesh(out, material) {
   return m
 }
 
-export default function Features({ data, treeStride = 1, imageryDetail = true, treeDistance = 900, onLoaded }) {
-  const camera = useThree((st) => st.camera)
+export default function Features({ data, imageryDetail = true, onLoaded }) {
   const [f, setF] = useState(null)
   useEffect(() => {
     let live = true
@@ -96,62 +93,21 @@ export default function Features({ data, treeStride = 1, imageryDetail = true, t
     const asphalt = new THREE.Color(ASPHALT)
     for (const r of f.roads) ribbon(r.pts, r.width, roads, ROAD_COLOR[r.cls] ? new THREE.Color(ROAD_COLOR[r.cls]) : asphalt)
 
-    // trees: low-poly crowns, instanced per 300 m chunk (frustum + distance
-    // culling); an octahedron reads as a crown from above
-    const crown = new THREE.OctahedronGeometry(1, 0)
-    crown.scale(1, 0.9, 1)
-    const tmat = withAerial(new THREE.MeshStandardMaterial({ roughness: 1, flatShading: true, envMapIntensity: 0.6 }))
-    const chunks = new Map()
-    const n = Math.floor(f.trees.length / 4 / treeStride)
-    for (let k = 0; k < n; k++) {
-      const q = k * treeStride * 4
-      const key = `${Math.floor(f.trees[q] / 300)},${Math.floor(f.trees[q + 1] / 300)}`
-      if (!chunks.has(key)) chunks.set(key, [])
-      chunks.get(key).push(q)
-    }
-    const trees = []
-    const o = new THREE.Object3D()
-    const c = new THREE.Color()
-    for (const list of chunks.values()) {
-      const im = new THREE.InstancedMesh(crown, tmat, list.length)
-      list.forEach((q, k) => {
-        const [x, z, y, s] = f.trees.subarray(q, q + 4)
-        o.position.set(x, y + s * 1.25, z)
-        o.rotation.set(0, x * 0.37, 0)
-        o.scale.setScalar(s * 0.85)
-        o.updateMatrix()
-        im.setMatrixAt(k, o.matrix)
-        c.setHSL(0.24 + ((x * 13.1 + z * 7.7) % 1) * 0.05, 0.42, 0.2 + ((((x * 3.3 - z) % 1) + 1) % 1) * 0.07)
-        im.setColorAt(k, c)
-      })
-      im.castShadow = true
-      im.receiveShadow = true
-      im.computeBoundingSphere()
-      trees.push(im)
-    }
     // ground polygons & roads are only needed without high-resolution imagery
-    const list = imageryDetail ? trees : [toMesh(areas, mat), toMesh(ponds, water), toMesh(roads, mat), ...trees]
-    return { list, trees, materials: [mat, water, tmat] }
-  }, [f, treeStride, imageryDetail])
+    const list = imageryDetail ? [] : [toMesh(areas, mat), toMesh(ponds, water), toMesh(roads, mat)]
+    return { list, materials: [mat, water] }
+  }, [f, imageryDetail])
 
   useEffect(() => {
     if (objects) onLoaded?.()
   }, [objects]) // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(
     () => () => {
-      objects?.list.forEach((m) => !m.isInstancedMesh && m.geometry.dispose())
-      objects?.trees[0]?.geometry.dispose()
+      objects?.list.forEach((m) => m.geometry.dispose())
       objects?.materials.forEach((m) => m.dispose())
     },
     [objects],
   )
-  useFrame(() => {
-    if (!objects) return
-    for (const t of objects.trees) {
-      const sph = t.boundingSphere
-      t.visible = Math.hypot(camera.position.x - sph.center.x, camera.position.z - sph.center.z) - sph.radius < treeDistance
-    }
-  })
   if (!objects) return null
   return objects.list.map((m, i) => <primitive key={i} object={m} />)
 }

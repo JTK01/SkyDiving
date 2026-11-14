@@ -21,8 +21,10 @@ export const PRESETS = {
     terrainDetail: 1.2,
     maxTiles: 80,
     midDistance: 1600, // mid-zone boxes hidden beyond (m)
-    treeDistance: 500,
-    treeStride: 3,
+    treeDistance: 900, // impostors beyond the mid level
+    treeStride: 2,
+    treeNear: { n: 12, r: 30 }, // full trees: the n nearest within r m
+    treeMid: { n: 500, r: 180 },
     anisotropy: 2,
   },
   medium: {
@@ -34,8 +36,10 @@ export const PRESETS = {
     terrainDetail: 1.5,
     maxTiles: 120,
     midDistance: 2300,
-    treeDistance: 800,
+    treeDistance: 1300,
     treeStride: 1,
+    treeNear: { n: 30, r: 45 },
+    treeMid: { n: 1200, r: 260 },
     anisotropy: 4,
   },
   high: {
@@ -49,6 +53,8 @@ export const PRESETS = {
     midDistance: 2700,
     treeDistance: 1300,
     treeStride: 1,
+    treeNear: { n: 50, r: 60 },
+    treeMid: { n: 2000, r: 350 },
     anisotropy: 8,
   },
 }

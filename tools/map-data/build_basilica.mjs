@@ -9,6 +9,7 @@ import path from 'node:path'
 import { execFileSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { buildBasilica } from '../../src/map/world/basilicaGeometry.js'
+import { CollisionWorld } from '../../src/map/play/collision.js'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
 const out = path.resolve(here, '../../public/models/sagrada-familia')
@@ -17,6 +18,44 @@ fs.mkdirSync(out, { recursive: true })
 // two levels of detail: lod 0 near (all ornament), lod 1 far (main masses)
 const LODS = [buildBasilica({ lod: 0 }), buildBasilica({ lod: 1 })]
 const { colliders } = LODS[0]
+
+// --- ambient occlusion bake into the vertex colours -----------------------
+// distance-field AO: sample the collision shapes (+ the ground plane) along
+// each vertex normal; hollows, hole backs, the feet of towers and the
+// underside of canopies darken. ≈ 1 min for the near model.
+const aoWorld = new CollisionWorld({
+  terrain: { half: 32768, n: 2, levels: [], fallback: 0 },
+  basilica: { x: 0, y: 0, z: 0, rotationY: 0, colliders: colliders.filter((c) => !c.noAO) },
+  radius: 0,
+})
+function sdf(x, y, z) {
+  let d = Math.max(0, y)
+  const cell = aoWorld.grid.get(`${Math.floor(x / 16)},${Math.floor(z / 16)}`)
+  if (cell) for (const s of cell) d = Math.min(d, s.dist(x, y, z))
+  return d
+}
+const STEPS = [0.5, 1.2, 2.5, 4.5]
+const WEIGHT = [0.4, 0.3, 0.2, 0.1]
+function bakeAO(g) {
+  const p = g.attributes.position.array
+  const n = g.attributes.normal.array
+  const c = g.attributes.color.array
+  for (let i = 0; i < p.length; i += 3) {
+    let occ = 0
+    for (let k = 0; k < 4; k++) {
+      const dk = STEPS[k]
+      const d = sdf(p[i] + n[i] * dk, p[i + 1] + n[i + 1] * dk, p[i + 2] + n[i + 2] * dk)
+      occ += (Math.max(0, dk - d) / dk) * WEIGHT[k]
+    }
+    const ao = Math.min(1, Math.max(0.35, 1 - occ * 1.4))
+    c[i] *= ao
+    c[i + 1] *= ao
+    c[i + 2] *= ao
+  }
+}
+const t0 = Date.now()
+for (const L of LODS) for (const kind of ['stone', 'mosaic']) if (L[kind]) bakeAO(L[kind])
+console.error(`AO baked in ${((Date.now() - t0) / 1000).toFixed(1)} s`)
 
 // --- minimal glTF 2.0 binary writer -------------------------------------
 const chunks = []
@@ -49,8 +88,10 @@ function primitive(g, tower) {
     COLOR_0: addAccessor(g.attributes.color.array, 'VEC3', 3),
   }
   if (tower) {
-    // tower louvre data in texcoords: uv = (angle, rel. height), uv1 = (slit, 0)
+    // tower louvre data in texcoords: uv = (angle, rel. height),
+    // uv1 = (slit, surface type / 3) — kept inside 0..1 for 16-bit quantisation
     const t = g.attributes.aTower.array
+    const sf = g.attributes.aSurf.array
     const n = t.length / 3
     const uv0 = new Float32Array(n * 2)
     const uv1 = new Float32Array(n * 2)
@@ -58,6 +99,7 @@ function primitive(g, tower) {
       uv0[i * 2] = t[i * 3]
       uv0[i * 2 + 1] = t[i * 3 + 1]
       uv1[i * 2] = t[i * 3 + 2]
+      uv1[i * 2 + 1] = sf[i] / 3
     }
     attributes.TEXCOORD_0 = addAccessor(uv0, 'VEC2', 2)
     attributes.TEXCOORD_1 = addAccessor(uv1, 'VEC2', 2)

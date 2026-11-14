@@ -52,6 +52,9 @@ class Builder {
     this.near = lod === 0
     this.parts = { stone: [], mosaic: [], glass: [] }
     this.colliders = []
+    // surface type for the triplanar detail textures (stone_albedo / stone_normal):
+    // 0 ashlar · 1 carved · 2 porous · 3 mosaic
+    this.surf = 0
     this.m = new THREE.Matrix4()
     this.q = new THREE.Quaternion()
     this.e = new THREE.Euler()
@@ -72,6 +75,7 @@ class Builder {
     }
     if (kind === 'stone' && !g.attributes.aTower) g.setAttribute('aTower', new THREE.BufferAttribute(new Float32Array(n * 3), 3))
     if (kind !== 'stone') g.deleteAttribute('aTower')
+    g.setAttribute('aSurf', new THREE.BufferAttribute(new Float32Array(n).fill(kind === 'mosaic' ? 3 : (opts.surf ?? this.surf)), 1))
     this.e.set(rot[0], rot[1], rot[2])
     this.m.compose(new THREE.Vector3(...pos), this.q.setFromEuler(this.e), new THREE.Vector3(...scale))
     g.applyMatrix4(this.m)
@@ -157,6 +161,66 @@ function towerGeometry(r0, H, { segments = 14, body = 0.55, taper = 0.18, k = 1.
   }
   const g = new THREE.LatheGeometry(pts, segments)
   towerData(g, H, slit)
+  g.userData.collider = { type: 'tower', params: { r0, H, body, taper, k } }
+  return g
+}
+
+/**
+ * Apostle tower, near model [photo 3]: the louvred openings are real holes —
+ * rows of slots spiralling round the shaft, each recessed 0.35 m with dark
+ * sides and back. Same profile (and collider) as towerGeometry.
+ */
+function perforatedTower(r0, H, color, { segments = 36, rows = 48, body = 0.55, taper = 0.18, k = 1.8 } = {}) {
+  const pos = []
+  const col = []
+  const dark = color.clone().multiplyScalar(0.18)
+  const side = color.clone().multiplyScalar(0.55)
+  const ring = (t) => {
+    let r = profileR(r0, t, body, taper, k)
+    if (t < 0.85 && Math.abs(((t * 9) % 1) - 0.5) < 0.04) r *= 1.05
+    return Math.max(r, 0.25)
+  }
+  const P = (i, t, inset = 0) => {
+    const th = (i / segments) * Math.PI * 2
+    const r = ring(t) - inset
+    return [Math.cos(th) * r, t * H, Math.sin(th) * r]
+  }
+  const quad = (a, b, c, d, cc) => {
+    // a b c d counter-clockwise seen from outside
+    pos.push(...a, ...b, ...c, ...a, ...c, ...d)
+    for (let q = 0; q < 6; q++) col.push(cc.r, cc.g, cc.b)
+  }
+  const dt = 1 / rows
+  for (let j = 0; j < rows; j++) {
+    const t0 = j * dt
+    const t1 = t0 + dt
+    for (let i = 0; i < segments; i++) {
+      // outward winding: (i, t0) → (i, t1) → (i+1, t1) → (i+1, t0) flips; use (i,t0),(i,t1),(i+1,t1),(i+1,t0) reversed
+      const a = P(i, t0)
+      const b = P(i + 1, t0)
+      const c = P(i + 1, t1)
+      const d = P(i, t1)
+      const stage = j % 6
+      const hole = t0 > 0.1 && t1 < 0.86 && stage >= 1 && stage <= 4 && (i + Math.floor(j / 2)) % 3 === 0
+      if (!hole) {
+        quad(a, d, c, b, color)
+        continue
+      }
+      const ai = P(i, t0, 0.35)
+      const bi = P(i + 1, t0, 0.35)
+      const ci = P(i + 1, t1, 0.35)
+      const di = P(i, t1, 0.35)
+      quad(ai, di, ci, bi, dark) // back
+      quad(a, ai, bi, b, side) // sill
+      quad(d, c, ci, di, side) // head
+      quad(a, d, di, ai, side) // jambs
+      quad(b, bi, ci, c, side)
+    }
+  }
+  const g = new THREE.BufferGeometry()
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3))
+  g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3))
+  towerData(g, H, 0) // no shader louvres: the holes are geometry
   g.userData.collider = { type: 'tower', params: { r0, H, body, taper, k } }
   return g
 }
@@ -254,6 +318,13 @@ function apostleFinial(b, x, y0, z, len, r, facing, palette) {
     collider: { type: 'cyl', x, z, y0, h: shaftH, rb: r * 0.93, rt: r * 0.3 },
   })
   if (b.near) {
+    // raised ridges along the six edges of the shaft
+    for (let e = 0; e < 6; e++) {
+      const a = facing + (e / 6) * Math.PI * 2
+      const rr = r * 0.66
+      const tilt = Math.atan2(r * 0.68, shaftH)
+      b.box('mosaic', palette[1], [0.16 * r, shaftH * 0.98, 0.16 * r], [x + Math.cos(a) * rr, y0 + shaftH / 2, z - Math.sin(a) * rr], [0, a, tilt], { collider: false })
+    }
     // white balls along the six edges
     const ball = new THREE.IcosahedronGeometry(r * 0.16, 0)
     for (let e = 0; e < 6; e++) {
@@ -295,7 +366,9 @@ function apostleFinial(b, x, y0, z, len, r, facing, palette) {
 function apostleTower(b, x, z, H, r0, color, facing, palette) {
   const body = H * 0.76
   const BELL = { segments: b.near ? 22 : 12, body: 0.62, taper: 0.1, k: 2.6, steps: b.near ? 40 : 18 }
-  b.add('stone', towerGeometry(r0, body, BELL), jitter(color, 0.03), [x, 0, z])
+  const c = jitter(color, 0.03)
+  if (b.near) b.add('stone', perforatedTower(r0, body, c, { body: 0.62, taper: 0.1, k: 2.6 }), c, [x, 0, z], undefined, undefined, { surf: 2 })
+  else b.add('stone', towerGeometry(r0, body, BELL), c, [x, 0, z], undefined, undefined, { surf: 2 })
   // shaft (0.8 len) + disc (2.5 r) end exactly at H
   const r = r0 * 0.52
   apostleFinial(b, x, body - 1.5, z, (H - body + 1.5 - 2.5 * r) / 0.8, r, facing, palette)
@@ -333,6 +406,28 @@ function windowPanel(b, x, y, z, w, h, facing) {
   b.add('glass', head, GLASS, [x, y + h, z], [0, along === 'z' ? Math.PI / 2 : 0, 0], undefined, { collider: false })
 }
 
+/**
+ * window with stone tracery [photo 1, 3]: recessed dark glass, two mullions
+ * (three lights), a ring and two small roundels in the pointed head, a sill.
+ * Near model only; far model uses windowPanel.
+ */
+function tracedWindow(b, x, y, z, w, h, facing, color = STONE) {
+  if (!b.near) return windowPanel(b, x, y, z, w, h, facing)
+  const alongX = Math.abs(facing % Math.PI) < 0.01 // wall plane spans x (faces ±z)
+  const P = (u, v, d = 0) => (alongX ? [x + u, y + v, z + d] : [x + d, y + v, z + u])
+  const S = (su, sv, sd) => (alongX ? [su, sv, sd] : [sd, sv, su])
+  const ry = alongX ? 0 : Math.PI / 2
+  windowPanel(b, x, y, z, w, h, facing)
+  const st = jitter(color, 0.05)
+  for (const u of [-w / 6, w / 6]) b.box('stone', st, S(0.18, h, 0.3), P(u, h / 2), undefined, { collider: false })
+  for (const u of [-w / 2, w / 2]) b.box('stone', st, S(0.3, h, 0.36), P(u, h / 2), undefined, { collider: false })
+  b.box('stone', st, S(w + 0.6, 0.3, 0.5), P(0, -0.15), undefined, { collider: false })
+  const ring = new THREE.TorusGeometry(w * 0.26, 0.09, 4, 16)
+  b.add('stone', ring, st, P(0, h + w * 0.42), [0, ry, 0], undefined, { collider: false })
+  const small = new THREE.TorusGeometry(w * 0.12, 0.07, 4, 12)
+  for (const u of [-w * 0.27, w * 0.27]) b.add('stone', small, st, P(u, h + w * 0.08), [0, ry, 0], undefined, { collider: false })
+}
+
 /** round rose window on a vertical plane (normal along x when alongX) */
 function rose(b, x, y, z, r, alongX) {
   b.add('glass', new THREE.CylinderGeometry(r, r, 0.3, 14), GLASS, [x, y, z], alongX ? [0, 0, Math.PI / 2] : [Math.PI / 2, 0, 0], undefined, { collider: false })
@@ -355,6 +450,109 @@ function relief(b, cx, cz, normal, w, y0, y1, count, color) {
   }
 }
 
+// smooth value noise (deterministic), for the carved surfaces
+const hashN = (x, y) => {
+  const s2 = Math.sin(x * 127.1 + y * 311.7) * 43758.5453
+  return s2 - Math.floor(s2)
+}
+function vnoise(x, y) {
+  const xi = Math.floor(x)
+  const yi = Math.floor(y)
+  const fx = x - xi
+  const fy = y - yi
+  const u = fx * fx * (3 - 2 * fx)
+  const v = fy * fy * (3 - 2 * fy)
+  const a = hashN(xi, yi)
+  const b2 = hashN(xi + 1, yi)
+  const c = hashN(xi, yi + 1)
+  const d = hashN(xi + 1, yi + 1)
+  return a + (b2 - a) * u + (c - a) * v + (a - b2 - c + d) * u * v
+}
+const fbm2 = (x, y) => vnoise(x, y) * 0.55 + vnoise(x * 2.1, y * 2.1) * 0.28 + vnoise(x * 4.3, y * 4.3) * 0.17
+
+/**
+ * Nativity façade relief, near model [photo 13, 6]: one continuous surface
+ * over the three portals, displaced outward by organic lumps, folds and
+ * vertical drips (the "melting stone" of Gaudí's façade), cut to the portal
+ * outlines, left open at the doorways. Darker in the hollows.
+ */
+function nativityRelief(b, portals, x0) {
+  const dz = 0.5
+  const dy = 0.5
+  const z0 = -21
+  const z1 = 21
+  const y0 = 2
+  const y1 = 53
+  const nz = Math.round((z1 - z0) / dz)
+  const ny = Math.round((y1 - y0) / dy)
+  const outline = (z) => {
+    let top = 41.5
+    for (const [zc, h, w] of portals) if (Math.abs(z - zc) < w / 2) top = Math.max(top, h * 0.55 + h * 0.45 * (1 - Math.abs(z - zc) / (w / 2)))
+    return top
+  }
+  const door = (z, y) => portals.some(([zc, h, w]) => Math.abs(z - zc) < w * 0.22 && y < h * 0.3)
+  const disp = (z, y) => {
+    if (door(z, y) || y > outline(z)) return 0
+    // stronger over the portals, fading toward the outline and the doorways
+    let k = 0.5
+    for (const [zc, h, w] of portals) if (Math.abs(z - zc) < w * 0.6) k = Math.max(k, 1 - Math.abs(z - zc) / (w * 0.6))
+    const edge = Math.min(1, (outline(z) - y) / 2.5)
+    const lumps = Math.pow(fbm2(z * 0.55, y * 0.45), 1.6) * 2.6
+    const folds = Math.abs(Math.sin(fbm2(z * 0.22 + 7, y * 0.18) * 9)) * 0.5
+    const drips = Math.max(0, vnoise(z * 1.7, 3.1) - 0.55) * 3 * (0.6 + 0.4 * Math.sin(y * 0.9 + z))
+    return (lumps + folds + drips) * k * edge
+  }
+  const pos = []
+  const col = []
+  const P = (i, j) => {
+    const z = z0 + i * dz
+    const y = y0 + j * dy
+    return [x0 + disp(z, y), y, z]
+  }
+  const C = (p) => {
+    const d = p[0] - x0
+    const c = OLD.clone().multiplyScalar(0.62 + 0.16 * Math.min(d, 2.2) + 0.08 * hashN(p[1], p[2]))
+    return [c.r, c.g, c.b]
+  }
+  for (let i = 0; i < nz; i++)
+    for (let j = 0; j < ny; j++) {
+      const zc = z0 + (i + 0.5) * dz
+      const yc = y0 + (j + 0.5) * dy
+      if (yc > outline(zc) + 0.2 || door(zc, yc)) continue
+      const a = P(i, j)
+      const bb = P(i + 1, j)
+      const c = P(i + 1, j + 1)
+      const d = P(i, j + 1)
+      // facing +x: (a, b, c) with z increasing then y up
+      for (const q of [a, bb, c, a, c, d]) {
+        pos.push(...q)
+        col.push(...C(q))
+      }
+    }
+  const g = new THREE.BufferGeometry()
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3))
+  g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3))
+  // collision: a slab over the relief's mean depth
+  b.add('stone', g, OLD, [0, 0, 0], undefined, undefined, { collider: { type: 'box', x: x0 + 0.7, y: 21.5, z: 0, hx: 0.7, hy: 19.5, hz: 21, ry: 0, noAO: 1 }, surf: 1 })
+  return disp
+}
+
+/** a standing, robed figure of height h facing `facing` (sculpture groups) */
+function figure(b, x, y, z, h, facing, color, angular = false) {
+  const c = jitter(color, 0.08)
+  const opts = { collider: false }
+  if (angular) {
+    // Passion façade (Subirachs): faceted, geometric figures
+    b.add('stone', new THREE.CylinderGeometry(h * 0.16, h * 0.22, h * 0.72, 4), c, [x, y + h * 0.36, z], [0, facing + 0.4, 0], undefined, opts)
+    b.add('stone', new THREE.OctahedronGeometry(h * 0.1, 0), c, [x, y + h * 0.82, z], [0, facing, 0], [1, 1.3, 1], opts)
+  } else {
+    b.add('stone', new THREE.CylinderGeometry(h * 0.12, h * 0.24, h * 0.72, 7), c, [x, y + h * 0.36, z], [0, facing, 0], undefined, opts)
+    b.add('stone', new THREE.IcosahedronGeometry(h * 0.1, 1), c, [x, y + h * 0.83, z], undefined, undefined, opts)
+    // drapery over the shoulders
+    b.add('stone', new THREE.ConeGeometry(h * 0.2, h * 0.3, 7), c, [x, y + h * 0.66, z], [Math.PI, 0, 0], undefined, opts)
+  }
+}
+
 /**
  * Hyperboloid lantern of the Glory façade [official]: hourglass shaft with a
  * mosaic tip.
@@ -370,7 +568,7 @@ function lantern(b, x, y, z, h, r, color) {
   pts.push(new THREE.Vector2(0.01, h * 1.06))
   const g = latheCollide(pts, b.near ? 16 : 8)
   towerData(g, h, 0.5)
-  b.add('stone', g, jitter(color, 0.03), [x, y, z])
+  b.add('stone', g, jitter(color, 0.03), [x, y, z], undefined, undefined, { surf: 2 })
   b.add('mosaic', new THREE.IcosahedronGeometry(r * 0.35, 0), GOLD, [x, y + h * 1.08, z])
 }
 
@@ -436,13 +634,13 @@ export function buildBasilica({ lod = 0 } = {}) {
       if (near) {
         rose(b, sx * 35.8, 34, z, 1.6, true)
         // two tiers of tall windows in the aisle wall, buttresses between
-        windowPanel(b, sx * 34.65, 6, z, 3.2, 9, Math.PI / 2)
-        windowPanel(b, sx * 34.65, 18, z, 3.2, 8, Math.PI / 2)
+        tracedWindow(b, sx * 34.65, 6, z, 3.2, 9, Math.PI / 2)
+        tracedWindow(b, sx * 34.65, 18, z, 3.2, 8, Math.PI / 2)
         b.box('stone', jitter(STONE, 0.04), [1.6, 30, 1.6], [sx * 35, 15, z + 4.5])
       }
     }
     // clerestory windows above the aisle roofs
-    if (near) for (let z = -18; z <= 42; z += 6) if (Math.abs(z) > 16) windowPanel(b, sx * 22.65, 31, z, 2.6, 11, Math.PI / 2)
+    if (near) for (let z = -18; z <= 42; z += 6) if (Math.abs(z) > 16) tracedWindow(b, sx * 22.65, 31, z, 2.6, 11, Math.PI / 2, NEW)
   }
   // nave-roof lanterns along the ridge
   if (near) for (let z = 18; z <= 40; z += 7) b.add('stone', new THREE.ConeGeometry(1.6, 7, 8), NEW, [0, 63, z])
@@ -466,8 +664,10 @@ export function buildBasilica({ lod = 0 } = {}) {
   for (let x = -34; x <= 34; x += 8) if (Math.abs(x) > 20) for (const sz of [-1, 1]) pinnacle(b, x, 45, sz * 15, 9, NEW, fruits[(x / 8 + 9) % 5 | 0])
 
   // ---- Nativity façade (+x) [photo 13, 6]: aged stone, three portals -----
+  b.surf = 1
   b.box('stone', OLD, [7, 42, 44], [41, 21, 0])
-  for (const [z, h, w] of [[-12, 40, 10], [0, 52, 13], [12, 40, 10]]) {
+  const PORTALS = [[-12, 40, 10], [0, 52, 13], [12, 40, 10]]
+  for (const [z, h, w] of PORTALS) {
     // receding archivolts (nested pointed frames), dark doorway
     const layers = near ? 4 : 1
     for (let l = 0; l < layers; l++) {
@@ -477,13 +677,27 @@ export function buildBasilica({ lod = 0 } = {}) {
     }
     if (near) b.box('glass', new THREE.Color('#2a2622'), [0.3, h * 0.3, w * 0.35], [47.1, h * 0.15, z], undefined, { collider: false })
   }
-  // sculpted relief over the portal faces, densest on the central portal
-  relief(b, 47, 0, 0, 40, 5, 52, near ? 420 : 60, OLD)
+  // sculpted relief over the portal faces: a displaced surface + figure groups
+  if (near) {
+    const disp = nativityRelief(b, PORTALS, 44.6)
+    let fk = 0
+    for (const [zc, h, w] of PORTALS)
+      for (let tier = 0; tier < 4; tier++) {
+        const y = h * 0.32 + tier * h * 0.12
+        const n = tier < 2 ? 3 : 2
+        for (let q = 0; q < n; q++) {
+          const z = zc + (q - (n - 1) / 2) * w * 0.26
+          figure(b, 44.6 + disp(z, y + 1) + 0.4, y, z, 2.4 + (fk++ % 3) * 0.4, 0, OLD)
+        }
+      }
+  } else relief(b, 46, 0, 0, 40, 6, 50, 40, OLD)
   // the Tree of Life cypress with its white doves
   b.add('mosaic', new THREE.ConeGeometry(3.4, 16, near ? 12 : 8), GREEN, [45, 61, 0])
   if (near) b.add('mosaic', new THREE.ConeGeometry(2.6, 8, 12), GREEN.clone().multiplyScalar(1.15), [45, 57, 0], undefined, undefined, { collider: false })
   for (let k = 0; k < (near ? 10 : 3); k++) b.add('mosaic', new THREE.IcosahedronGeometry(0.7, 0), WHITE, [45 + Math.cos(k) * 2.8, 54 + k * 1.3, Math.sin(k) * 2.8])
+  b.surf = 2
   ;[[-16.5, 98.5], [-5.5, 107], [5.5, 107], [16.5, 98.5]].forEach(([z, H], i) => apostleTower(b, 41, z, H, 4.3, OLD, 0, i % 2 ? [GOLD, RED] : [RED, ORANGE]))
+  b.surf = 0
 
   // ---- Passion façade (−x) [photo 1, 3, 9, 19]: bone columns, ribbed pediment
   b.box('stone', STONE, [7, 44, 44], [-41, 22, 0])
@@ -497,7 +711,7 @@ export function buildBasilica({ lod = 0 } = {}) {
       pts.push(new THREE.Vector2(0.8 + 1.0 * Math.sin(Math.PI * t) + (t > 0.85 ? (t - 0.85) * 6 : 0), t * 21))
     }
     const bone = latheCollide(pts, near ? 12 : 6)
-    b.add('stone', bone, jitter(PALE, 0.03), [-49, 0, z], [(k % 2 ? 1 : -1) * 0.16, 0, 0.08])
+    b.add('stone', bone, jitter(PALE, 0.03), [-49, 0, z], [(k % 2 ? 1 : -1) * 0.16, 0, 0.08], undefined, { surf: 2 })
   }
   // crowning pediment: 18 inclined ribs, white, tent-like [photo 1]
   for (let k = 0; k < 18; k++) {
@@ -510,10 +724,7 @@ export function buildBasilica({ lod = 0 } = {}) {
   b.add('stone', gable(44, 36, 1.6), PALE, [-45.4, 22.5, 0], [0, Math.PI / 2, 0])
   // frieze [photo 1, 3]: a row of standing figures on the portico canopy
   if (near)
-    for (let k = 0; k < 14; k++) {
-      const z = -19.5 + k * 3
-      b.add('stone', new THREE.IcosahedronGeometry(0.7, 0), jitter(STONE, 0.1), [-49 - (k % 2) * 0.6, 24.2, z], [0, k, 0], [1, 2.4, 1], { collider: false })
-    }
+    for (let k = 0; k < 14; k++) figure(b, -49 - (k % 2) * 0.6, 22.1, -19.5 + k * 3, 3.2, Math.PI, STONE, true)
   b.box('mosaic', GOLD, [0.8, 8, 0.8], [-46.8, 60, 0]) // cross
   b.box('mosaic', GOLD, [0.8, 0.8, 5], [-46.8, 62, 0])
   ;[[-16.5, 107], [-5.5, 112], [5.5, 112], [16.5, 107]].forEach(([z, H], i) => apostleTower(b, -41, z, H, 4.4, STONE, Math.PI, i % 2 ? [RED, ORANGE] : [ORANGE, RED]))
@@ -533,12 +744,14 @@ export function buildBasilica({ lod = 0 } = {}) {
     const x = -20 + k * 5
     lantern(b, x, 33, 52.5, 26 + (1 - Math.abs(x) / 20) * 21, 2.1, PALE)
   }
-  if (near) for (let k = 0; k < 5; k++) windowPanel(b, -12 + k * 6, 6, 49.2, 3, 14, 0)
+  if (near) for (let k = 0; k < 5; k++) tracedWindow(b, -12 + k * 6, 6, 49.2, 3, 14, 0, NEW)
 
   // ---- sacristies at the apse corners [photo 1, 11, 13] ------------------
+  b.surf = 2
   sacristy(b, -37, -42, STONE)
   sacristy(b, 37, -42, OLD)
   // ---- cloister around the apse, Assumption chapel [official] -----------
+  b.surf = 0
   b.box('stone', STONE, [56, 11, 3], [0, 5.5, -54])
   for (const sx of [-1, 1]) {
     b.box('stone', STONE, [4, 11, 22], [sx * 46, 5.5, -26])
@@ -549,11 +762,12 @@ export function buildBasilica({ lod = 0 } = {}) {
     collider: { type: 'sphere', x: 0, y: 12, z: -56, r: 5.3 },
   })
   if (near) {
-    for (let x = -24; x <= 24; x += 6) if (Math.abs(x) > 8) windowPanel(b, x, 2, -55.6, 2.4, 7, 0)
-    for (const sx of [-1, 1]) for (const z of [-34, -26, -18, 24, 32, 40]) windowPanel(b, sx * 48.1, 2, z, 2.4, 7, Math.PI / 2)
+    for (let x = -24; x <= 24; x += 6) if (Math.abs(x) > 8) tracedWindow(b, x, 2, -55.6, 2.4, 7, 0)
+    for (const sx of [-1, 1]) for (const z of [-34, -26, -18, 24, 32, 40]) tracedWindow(b, sx * 48.1, 2, z, 2.4, 7, Math.PI / 2)
   }
 
   // ---- central towers [photo 1, 3, 11; official] -------------------------
+  b.surf = 2
   const central = { segments: near ? 48 : 16, rings: near ? 44 : 14, body: 0.62, taper: 0.12, k: 2.2, slit: 0.7 }
   // Tower of Jesus Christ: 155.5 m + the 17 m four-armed white cross = 172.5 m
   b.add('stone', ribbedTower(9.5, 155.5, central), NEW, [0, 0, 1])
@@ -570,6 +784,7 @@ export function buildBasilica({ lod = 0 } = {}) {
     evangelistSymbol(b, x, 130.5, z, i)
   })
   // church grounds
+  b.surf = 2
   b.box('stone', new THREE.Color('#cdbfa8'), [104, 0.6, 112], [0, 0.3, 0])
   return b.result()
 }

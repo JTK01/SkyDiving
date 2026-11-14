@@ -120,12 +120,13 @@ src/
 
 | 구역 | 표현 | 데이터 |
 |---|---|---|
-| 근거리 ≤600 m | 실제 건물 외곽선 돌출(파사드·지붕·1층 KTX2 아틀라스), 가로수(≤1.3 km), 성당 절차적 모델(meshopt glb) | Overture Maps(OSM) |
+| 근거리 ≤600 m | 실제 건물 외곽선 돌출(파사드·지붕·1층 KTX2 아틀라스), 가로수(≤1.3 km), 성당 절차적 모델(완공 상태, 18개 첨탑, LOD 2단계, meshopt glb) | Overture Maps(OSM), 참고 사진·공식 설계 |
 | 중거리 ≤2.7 km | 건물을 방향 있는 박스로 인스턴싱(같은 아틀라스), 프리셋별 표시 거리 1.6/2.3/2.7 km | Overture Maps(OSM) |
 | 지형 | 쿼드트리 L0 65 km … L8 256 m, 경사·고도 재질 혼합 + 디테일 노멀 | Copernicus DEM GLO-30 |
 | 항공영상 | L5–L8(≤3 km): ICGC 25 cm 정사영상 512 px, L0–L4: Sentinel-2, 모두 KTX2(ETC1S) | ICGC(CC BY 4.0), Sentinel-2 |
 
 - 타일: `public/tiles/<map>/` (≈8.2 MB, JS 번들 밖). 카메라 위치에 따라 필요한 타일만 요청·업로드하고 LRU로 해제. 기본 URL `VITE_TILES_BASE_URL`, 이미지 소스 `VITE_MAP_IMAGERY`(기본 `hybrid`). 생성 도구: `tools/map-data/`.
+- 성당: 참고 사진 31장(`docs/reference/sagrada-familia/`)과 공식 완공 설계를 근거로 만든 완공 상태 모델(크레인·비계 없음). 분류·차이·근거 구분은 `docs/reference/sagrada-familia/ANALYSIS.md`. 450 m 이내에서만 고디테일 LOD0(약 95 k 삼각형)을 그리고 그 밖은 LOD1(약 17 k). 생성: `node tools/map-data/build_basilica.mjs`.
 - 렌더링: 고정 낮 태양 + RoomEnvironment IBL, 높이 감쇠 대기 원근(시선 적분 안개) + 하늘 돔, 성당 주변 ±320 m만 그림자(정적 캐시: 지오메트리가 바뀔 때만 다시 그림), Neutral 톤매핑, 하프 해상도 블룸.
 - 품질 프리셋(`src/map/quality.js`): 저/중/고 = 해상도 배율 0.6–0.85 / 0.7–1.0 / 0.85–1.0, 그림자 없음/1024/2048, 블룸 off/on/on, 타일 80/120/160, 나무 거리 500/800/1300 m. 첫 진입 시 GPU 이름으로 추정(모바일 → 저), 플레이 화면 우상단에서 수동 전환(선택 저장, `자동`으로 복귀), `?q=low|medium|high`로 강제. 해상도 배율은 1초마다 프레임 시간(목표 16.7 ms)에 맞춰 자동 조정.
 - 외곽: 하늘 지평선색 = 안개색 = 지평선 아래색이라 지형 끝(32 km)이 하늘로 녹아듭니다. 단색 바닥 없음.

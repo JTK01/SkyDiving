@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react'
 import Credits from './Credits'
+import { WALK } from './DropController'
 import { useQuality, PRESETS, BENCH } from '../quality'
 
 /** 저/중/고 quality switch (auto-picked at first, the choice is remembered) */
@@ -68,6 +69,14 @@ function BenchResult({ b }) {
   )
 }
 
+/** controls hint: free fall, on foot (ground / roof), or look-only on the basilica */
+function hintText(walk) {
+  if (!walk) return 'WASD / 방향키 이동 · 드래그로 시점'
+  if (walk.mode === 'look') return '성당 위에서는 둘러보기만 할 수 있어요 · 드래그로 시점'
+  if (walk.mode === 'roof') return 'WASD 걷기 · Shift 달리기 · 드래그로 시점 (이 지붕 위에서만)'
+  return `WASD 걷기 · Shift 달리기 · 드래그로 시점 (착지 지점 반경 ${WALK.radius} m)`
+}
+
 /** what the jumper touched (state.contact from DropController) */
 function contactText(c) {
   if (!c) return '낙하가 끝났습니다.'
@@ -134,27 +143,32 @@ export default function PlayHud({ map, manifest, state, ended, onRestart, onExit
           </dd>
         </div>
       </dl>
-      <p className="play-hud__hint">WASD / 방향키 이동 · 드래그로 시점</p>
+      <p className="play-hud__hint">{hintText(ended ? state.walk : null)}</p>
       <footer className="play-hud__credits">
         <Credits manifest={manifest} />
       </footer>
       {ended && (
-        <div className="play-hud__end" role="dialog" aria-label="낙하 종료">
+        // not modal: the jumper walks / looks around while it stays on screen
+        <div className="play-hud__end" role="status" aria-label="착지">
           <div className="play-hud__end-card">
-            <h2>낙하 종료</h2>
-            <p>{contactText(state.contact)}</p>
-            {state.contact && (
-              <p className="play-hud__end-meta">
-                접촉 속도 {Math.round(state.contact.speed * 3.6)} km/h · 지면에서 {Math.round(state.contact.height)} m
-              </p>
-            )}
+            <div className="play-hud__end-text">
+              <h2>착지</h2>
+              <p>{contactText(state.contact)}</p>
+              {state.contact && (
+                <p className="play-hud__end-meta">
+                  접촉 속도 {Math.round(state.contact.speed * 3.6)} km/h · 지면에서 {Math.round(state.contact.height)} m
+                </p>
+              )}
+            </div>
             {(BENCH || DEBUG) && state.bench && <BenchResult b={state.bench} />}
-            <button type="button" className="btn btn--primary" onClick={onRestart}>
-              다시 낙하
-            </button>
-            <button type="button" className="btn btn--ghost" onClick={onExit}>
-              맵 선택으로
-            </button>
+            <div className="play-hud__end-actions">
+              <button type="button" className="btn btn--primary" onClick={onRestart}>
+                다시 낙하
+              </button>
+              <button type="button" className="btn btn--ghost" onClick={onExit}>
+                맵 선택으로
+              </button>
+            </div>
           </div>
         </div>
       )}

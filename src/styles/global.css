@@ -1066,14 +1066,13 @@ input {
 }
 .map-credits,
 .play-hud__end {
-  pointer-events: auto;
+  pointer-events: none;
   position: fixed;
-  inset: 0;
+  left: 50%;
+  top: clamp(84px, 12vh, 110px); /* clear of the altitude readout at the bottom */
+  transform: translateX(-50%);
   z-index: 70;
-  display: grid;
-  place-items: center;
-  padding: 16px;
-  background: rgba(10, 22, 40, 0.35);
+  width: min(560px, calc(100% - 32px));
 }
 .map-credits__card,
 .play-hud__end-card {
@@ -1106,8 +1105,34 @@ input {
   color: #bfe0ff;
 }
 .play-hud__end-card {
-  text-align: center;
-  width: min(380px, 100%);
+  pointer-events: auto;
+  width: 100%;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px 16px;
+  padding: 14px 16px;
+}
+.play-hud__end-card h2 {
+  margin: 0 0 2px;
+  font-size: 15px;
+}
+.play-hud__end-text p {
+  margin: 0;
+  font-size: 13px;
+}
+.play-hud__end-actions {
+  display: flex;
+  gap: 8px;
+}
+.play-hud__end-actions .btn {
+  width: auto;
+  padding: 10px 16px;
+  margin: 0;
+}
+.play-hud__end-card .play-hud__bench {
+  flex-basis: 100%;
 }
 .play-hud__bench {
   display: grid;
@@ -1139,7 +1164,7 @@ input {
   word-break: break-word;
 }
 .play-hud__end-meta {
-  margin-top: -6px;
+  margin-top: 2px;
   font-size: 12.5px;
   letter-spacing: 0.02em;
   opacity: 0.72;

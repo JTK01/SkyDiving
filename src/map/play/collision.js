@@ -27,6 +27,14 @@ function segDist(px, py, ax, ay, bx, by) {
   const t = l > 0 ? Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / l)) : 0
   return Math.hypot(px - ax - t * dx, py - ay - t * dy)
 }
+/** distance from (px, py) to the nearest edge of a closed polygon (inside or out) */
+export function edgeDist(pts, px, py) {
+  const n = pts.length / 2
+  let d = Infinity
+  for (let i = 0, j = n - 1; i < n; j = i++) d = Math.min(d, segDist(px, py, pts[i * 2], pts[i * 2 + 1], pts[j * 2], pts[j * 2 + 1]))
+  return d
+}
+
 /** distance from (px, py) to a closed polygon (flat x,y array), 0 inside */
 export function polyDist(pts, px, py) {
   const n = pts.length / 2
@@ -180,6 +188,7 @@ export class CollisionWorld {
         kind: 'building',
         part: 'roof',
         top,
+        ring: r,
         y0: base,
         y1: top,
         dist: (x, y, z) => Math.hypot(polyDist(r, x, z), Math.max(0, base - y, y - top)),
@@ -242,6 +251,29 @@ export class CollisionWorld {
       return h[a + n + 1] + (1 - fx) * (h[a + n] - h[a + n + 1]) + (1 - fz) * (h[a + 1] - h[a + n + 1])
     }
     return T.fallback ?? 0
+  }
+
+  /** the near-zone building whose footprint contains (x, z) (highest roof first), or null */
+  buildingAt(x, z) {
+    const cell = this.grid.get(`${Math.floor(x / CELL)},${Math.floor(z / CELL)}`)
+    let best = null
+    for (const s of cell || []) if (s.kind === 'building' && polyDist(s.ring, x, z) === 0 && (!best || s.top > best.top)) best = s
+    return best
+  }
+
+  /**
+   * Walking: is a standing capsule (radius r, feet at y) blocked at (x, z) by
+   * a building or the basilica? Sampled at knee, chest and head height, so a
+   * roof under the feet does not block.
+   */
+  blocked(x, y, z, r = 0.35, height = 1.75) {
+    const cell = this.grid.get(`${Math.floor(x / CELL)},${Math.floor(z / CELL)}`)
+    if (!cell) return null
+    for (const h of [0.45, height * 0.6, height]) {
+      const yy = y + h
+      for (const s of cell) if (yy >= s.y0 && yy <= s.y1 && s.dist(x, yy, z) <= r) return s
+    }
+    return null
   }
 
   /** what the body touches at (x, y, z), or null */

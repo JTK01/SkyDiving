@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react'
 import { useFrame, useThree } from '@react-three/fiber'
 import * as THREE from 'three'
 import { BENCH, frameLog, summarizeFrames, useQuality } from '../quality'
+import { edgeDist, polyDist } from './collision'
 
 /**
  * Free fall above the landmark.
@@ -19,7 +20,51 @@ import { BENCH, frameLog, summarizeFrames, useQuality } from '../quality'
 const G = 9.81
 const STEP = 1 / 120 // physics step (s)
 export const SWAY_RAD = 0.0005 // wind sway amplitude when enabled (≈ 0.03°)
-const KEYS = { KeyW: 'f', ArrowUp: 'f', KeyS: 'b', ArrowDown: 'b', KeyA: 'l', ArrowLeft: 'l', KeyD: 'r', ArrowRight: 'r' }
+const KEYS = { KeyW: 'f', ArrowUp: 'f', KeyS: 'b', ArrowDown: 'b', KeyA: 'l', ArrowLeft: 'l', KeyD: 'r', ArrowRight: 'r', ShiftLeft: 'run', ShiftRight: 'run' }
+
+// on foot after landing
+export const WALK = { radius: 50, eye: 1.6, body: 0.35, speed: 1.4, run: 4, pitchMax: 1.48 }
+
+/**
+ * Where and how the jumper stands after touching something:
+ *  ground → walk within WALK.radius m of the landing point (feet on the terrain)
+ *  roof   → walk inside that roof's outline only
+ *  look   → landed on the basilica: no walkable surface, look around only
+ * A wall hit (steering into a façade) puts the jumper on the ground beside it.
+ */
+export function walkSetup(world, state) {
+  const c = state.contact
+  if (c?.kind === 'basilica') return { mode: 'look', feet: state.y - WALK.eye }
+  if (c?.kind === 'building' && c.part === 'roof') {
+    const b = world.buildingAt(state.x, state.z)
+    if (b) {
+      // keep the body off the parapet: step toward the roof's centre if needed
+      let { x, z } = state
+      const r = b.ring
+      let cx = 0
+      let cz = 0
+      for (let k = 0; k < r.length; k += 2) {
+        cx += r[k] / (r.length / 2)
+        cz += r[k + 1] / (r.length / 2)
+      }
+      for (let k = 0; k < 20 && edgeDist(r, x, z) < WALK.body; k++) {
+        x += (cx - x) * 0.15
+        z += (cz - z) * 0.15
+      }
+      return { mode: 'roof', ring: r, feet: b.top, x, z }
+    }
+  }
+  // ground: the nearest free spot (a wall contact leaves the body against it)
+  for (let k = 0; k < 64; k++) {
+    const a = k * 2.39996
+    const d = k ? 0.4 * Math.sqrt(k) : 0
+    const x = state.x + Math.cos(a) * d
+    const z = state.z + Math.sin(a) * d
+    const feet = world.heightAt(x, z)
+    if (!world.blocked(x, feet, z, WALK.body)) return { mode: 'ground', ox: state.x, oz: state.z, feet, x, z }
+  }
+  return { mode: 'look', feet: world.heightAt(state.x, state.z) }
+}
 
 export function createDropState(drop, groundY, yawDeg) {
   return {
@@ -31,6 +76,7 @@ export function createDropState(drop, groundY, yawDeg) {
     pitch: -1.42, // almost straight down: the basilica is in the middle of the view
     ended: false,
     contact: null,
+    walk: null, // on foot after the landing (walkSetup)
     agl: drop.altitude,
     t: 0,
   }
@@ -59,7 +105,7 @@ export default function DropController({ drop, world, state, onEnd, enabled = tr
     const pm = (e) => {
       if (!drag.current) return
       state.yaw = drag.current.yaw - (e.clientX - drag.current.x) * 0.0045
-      state.pitch = THREE.MathUtils.clamp(drag.current.pitch - (e.clientY - drag.current.y) * 0.0045, -1.52, 0.35)
+      state.pitch = THREE.MathUtils.clamp(drag.current.pitch - (e.clientY - drag.current.y) * 0.0045, -1.52, state.walk ? WALK.pitchMax : 0.35)
     }
     const pu = () => (drag.current = null)
     window.addEventListener('keydown', kd)
@@ -110,7 +156,42 @@ export default function DropController({ drop, world, state, onEnd, enabled = tr
     Object.assign(state, { x, y, z })
   }
 
+  const walkStep = (dt) => {
+    const w = state.walk
+    if (w.mode === 'look') return
+    const f = (keys.has('f') ? 1 : 0) - (keys.has('b') ? 1 : 0)
+    const s = (keys.has('r') ? 1 : 0) - (keys.has('l') ? 1 : 0)
+    if (!f && !s) return
+    const sp = (keys.has('run') ? WALK.run : WALK.speed) * dt / Math.hypot(f, s)
+    const dx = (-Math.sin(state.yaw) * f + Math.cos(state.yaw) * s) * sp
+    const dz = (-Math.cos(state.yaw) * f - Math.sin(state.yaw) * s) * sp
+    const feetAt = (x, z) => (w.mode === 'roof' ? w.feet : world.heightAt(x, z))
+    const ok = (x, z) => {
+      if (w.mode === 'roof') {
+        if (polyDist(w.ring, x, z) > 0 || edgeDist(w.ring, x, z) < WALK.body) return false
+      } else if (Math.hypot(x - w.ox, z - w.oz) > WALK.radius) return false
+      return !world.blocked(x, feetAt(x, z), z, WALK.body)
+    }
+    // full step, else slide along the wall / boundary
+    for (const [x, z] of [[state.x + dx, state.z + dz], [state.x + dx, state.z], [state.x, state.z + dz]])
+      if (ok(x, z)) {
+        state.x = x
+        state.z = z
+        w.feet = feetAt(x, z)
+        break
+      }
+  }
+
   useFrame(({ clock }, rawDt) => {
+    if (state.walk) {
+      // on foot: no physics, the camera is the eye
+      walkStep(Math.min(rawDt, 0.1))
+      state.y = state.walk.feet + WALK.eye
+      state.agl = state.walk.feet - world.heightAt(state.x, state.z)
+      camera.position.set(state.x, state.y, state.z)
+      camera.rotation.set(state.pitch, state.yaw, 0)
+      return
+    }
     const dt = Math.min(rawDt, 0.25) // after a stall: catch up at most 0.25 s
     let alpha = 1
     if (enabled && world && !state.ended && !state.frozen) { // frozen: ?debug inspection only
@@ -137,6 +218,12 @@ export default function DropController({ drop, world, state, onEnd, enabled = tr
         state.bench = sum && { ...sum, ...frameLog.info, buffer: `${gl.domElement.width}×${gl.domElement.height}`, css: `${gl.domElement.clientWidth}×${gl.domElement.clientHeight}`, dpr: window.devicePixelRatio || 1 }
         if (window.__skydive) window.__skydive.bench = state.bench
         if (state.bench) console.info('[bench]', JSON.stringify(state.bench))
+        // stand up: look level from the landing spot
+        const w = walkSetup(world, state)
+        state.walk = w
+        if (w.x !== undefined) Object.assign(state, { x: w.x, z: w.z })
+        state.pitch = w.mode === 'look' ? Math.max(state.pitch, -0.6) : 0.05
+        state.vy = 0
         onEnd?.(state.contact)
       }
     }

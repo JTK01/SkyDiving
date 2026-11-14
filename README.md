@@ -126,7 +126,7 @@ src/
 | 항공영상 | L5–L8(≤3 km): ICGC 25 cm 정사영상 512 px, L0–L4: Sentinel-2, 모두 KTX2(ETC1S) | ICGC(CC BY 4.0), Sentinel-2 |
 
 - 타일: `public/tiles/<map>/` (≈8.2 MB, JS 번들 밖). 카메라 위치에 따라 필요한 타일만 요청·업로드하고 LRU로 해제. 기본 URL `VITE_TILES_BASE_URL`, 이미지 소스 `VITE_MAP_IMAGERY`(기본 `hybrid`). 생성 도구: `tools/map-data/`.
-- 성당: 참고 사진 31장(`docs/reference/sagrada-familia/`)과 공식 완공 설계를 근거로 만든 완공 상태 모델(크레인·비계 없음). 분류·차이·근거 구분은 `docs/reference/sagrada-familia/ANALYSIS.md`. 450 m 이내에서만 고디테일 LOD0(약 95 k 삼각형)을 그리고 그 밖은 LOD1(약 17 k). 생성: `node tools/map-data/build_basilica.mjs`.
+- 성당: 참고 사진 31장(`docs/reference/sagrada-familia/`)과 공식 완공 설계를 근거로 만든 완공 상태 모델(크레인·비계 없음). 분류·차이·근거 구분은 `docs/reference/sagrada-familia/ANALYSIS.md`. 450 m 이내에서만 고디테일 LOD0(약 169 k 삼각형: 실제로 뚫린 첨탑 루버, 창 트레이서리, 변위 조각면의 탄생 파사드, 조각상, 모자이크 능선, 정점 AO 베이크)을 그리고 그 밖은 LOD1(약 16 k). 근거리에서는 석재 4종(마름돌·조각면·다공질·모자이크)의 색·노멀·AO 텍스처를 월드 좌표 3면 투영으로 입힙니다. 에셋 출처: `docs/ASSETS.md`. 생성: `node tools/map-data/build_basilica.mjs`.
 - 나무: 가로수·공원 수목 4종(런던 플라타너스·팽나무(Celtis)·우산소나무·지중해 사이프러스, 사진과 시 가로수 통계 기준). 거리는 플라타너스 72 %·팽나무 28 %, 광장·공원은 소나무 40 %·사이프러스 20 %·플라타너스·팽나무 각 20 %. 줄기·가지 튜브 + 알파 잎 카드(오프라인 절차적 생성, `tools/map-data/build_trees.mjs`, `build_tree_textures.py`). LOD: 근거리(가장 가까운 30그루, 45 m, 그루당 0.6–1.5 k 삼각형) → 중거리(260 m, 1,200그루, 140–210 삼각형) → 원거리 반구 8×8 방향 임포스터(쿼드 1장). 종·레벨별 인스턴싱으로 드로우콜 9개 이하.
 - 렌더링: 고정 낮 태양 + RoomEnvironment IBL, 높이 감쇠 대기 원근(시선 적분 안개) + 하늘 돔, 성당 주변 ±320 m만 그림자(정적 캐시: 지오메트리가 바뀔 때만 다시 그림), Neutral 톤매핑, 하프 해상도 블룸.
 - 품질 프리셋(`src/map/quality.js`): 저/중/고 = 해상도 배율 0.6–0.85 / 0.7–1.0 / 0.85–1.0, 그림자 없음/1024/2048, 블룸 off/on/on, 타일 80/120/160, 나무 거리 500/800/1300 m. 첫 진입 시 GPU 이름으로 추정(모바일 → 저), 플레이 화면 우상단에서 수동 전환(선택 저장, `자동`으로 복귀), `?q=low|medium|high`로 강제. 해상도 배율은 1초마다 프레임 시간(목표 16.7 ms)에 맞춰 자동 조정.

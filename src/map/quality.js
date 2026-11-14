@@ -53,6 +53,14 @@ export const PRESETS = {
   },
 }
 const KEY = 'skydive.quality'
+const SWAY_KEY = 'skydive.sway'
+function readFlag(k) {
+  try {
+    return typeof localStorage !== 'undefined' && localStorage.getItem(k) === '1'
+  } catch {
+    return false
+  }
+}
 
 export function guessPreset(gl) {
   if (typeof window === 'undefined') return 'medium'
@@ -84,6 +92,15 @@ export const useQuality = create((set, get) => ({
   ...initial(),
   scale: 1, // current resolution scale (auto)
   dpr: null, // canvas pixel ratio set by AutoResolution (devicePixelRatio × scale)
+  sway: readFlag(SWAY_KEY), // wind sway of the camera while falling (off by default)
+  setSway: (on) => {
+    try {
+      localStorage.setItem(SWAY_KEY, on ? '1' : '0')
+    } catch {
+      /* ignore */
+    }
+    set({ sway: on })
+  },
   fps: 0,
   frameMs: 0,
   worstMs: 0,

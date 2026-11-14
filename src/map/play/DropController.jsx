@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react'
 import { useFrame, useThree } from '@react-three/fiber'
 import * as THREE from 'three'
-import { BENCH, frameLog, summarizeFrames } from '../quality'
+import { BENCH, frameLog, summarizeFrames, useQuality } from '../quality'
 
 /**
  * Free fall above the landmark.
@@ -12,9 +12,13 @@ import { BENCH, frameLog, summarizeFrames } from '../quality'
  *  - ends the moment the body touches the terrain, a building or the
  *    basilica (`world`: CollisionWorld, swept every frame, see collision.js);
  *    state.contact = { kind, part, speed } and onEnd(contact)
+ *  - physics runs at a fixed 120 Hz step, the camera is interpolated between
+ *    the last two steps; no camera shake unless the 'wind sway' setting is on
  * The HUD reads the live state through `state` (no re-renders per frame).
  */
 const G = 9.81
+const STEP = 1 / 120 // physics step (s)
+export const SWAY_RAD = 0.0005 // wind sway amplitude when enabled (≈ 0.03°)
 const KEYS = { KeyW: 'f', ArrowUp: 'f', KeyS: 'b', ArrowDown: 'b', KeyA: 'l', ArrowLeft: 'l', KeyD: 'r', ArrowRight: 'r' }
 
 export function createDropState(drop, groundY, yawDeg) {
@@ -34,6 +38,7 @@ export function createDropState(drop, groundY, yawDeg) {
 
 export default function DropController({ drop, world, state, onEnd, enabled = true }) {
   const { camera, gl } = useThree()
+  const sway = useQuality((q) => q.sway)
   const keys = useRef(new Set()).current
   const drag = useRef(null)
 
@@ -74,43 +79,58 @@ export default function DropController({ drop, world, state, onEnd, enabled = tr
     }
   }, [camera, gl, keys, state])
 
-  useFrame((_, rawDt) => {
-    const dt = Math.min(rawDt, 0.05)
+  // fixed-step simulation: the same motion at any frame rate; the camera is
+  // drawn between the last two physics states (no judder, no slow motion)
+  const sim = useRef({ acc: 0, prev: null }).current
+  const physics = (dt) => {
+    const from = { x: state.x, y: state.y, z: state.z }
+    sim.prev = from
+    state.t += dt
+    // vertical: quadratic drag toward terminal velocity
+    state.vy += G * (1 - (state.vy / drop.terminalSpeed) ** 2) * dt
+    let { x, y, z } = from
+    y -= state.vy * dt
+    // horizontal steering relative to the view direction
+    const f = (keys.has('f') ? 1 : 0) - (keys.has('b') ? 1 : 0)
+    const s = (keys.has('r') ? 1 : 0) - (keys.has('l') ? 1 : 0)
+    const sp = drop.steerSpeed * dt
+    x += (-Math.sin(state.yaw) * f + Math.cos(state.yaw) * s) * sp
+    z += (-Math.cos(state.yaw) * f - Math.sin(state.yaw) * s) * sp
+    const r = Math.hypot(x, z)
+    if (r > drop.radius) {
+      x *= drop.radius / r
+      z *= drop.radius / r
+    }
+    const hit = world.sweep(from, { x, y, z })
+    if (hit) {
+      ;({ x, y, z } = hit)
+      state.ended = true
+      state.contact = { kind: hit.kind, part: hit.part, speed: Math.hypot(state.vy, (f || s) && drop.steerSpeed), height: hit.y - world.R - hit.ground }
+    }
+    Object.assign(state, { x, y, z })
+  }
+
+  useFrame(({ clock }, rawDt) => {
+    const dt = Math.min(rawDt, 0.25) // after a stall: catch up at most 0.25 s
+    let alpha = 1
     if (enabled && world && !state.ended && !state.frozen) { // frozen: ?debug inspection only
-      const from = { x: state.x, y: state.y, z: state.z }
       if (state.t === 0) {
         // frame-time log of this drop (shown with ?bench / ?debug)
         frameLog.ms = []
         frameLog.recording = true
+        sim.acc = 0
       }
-      state.t += dt
       if (BENCH) {
         // hands-off benchmark: slow pan, tilting from straight down toward the horizon
         state.yaw += 0.12 * dt
         state.pitch = -1.42 + Math.min(1, state.t / 12) * 0.9
       }
-      // vertical: quadratic drag toward terminal velocity
-      state.vy += G * (1 - (state.vy / drop.terminalSpeed) ** 2) * dt
-      let { x, y, z } = from
-      y -= state.vy * dt
-      // horizontal steering relative to the view direction
-      const f = (keys.has('f') ? 1 : 0) - (keys.has('b') ? 1 : 0)
-      const s = (keys.has('r') ? 1 : 0) - (keys.has('l') ? 1 : 0)
-      const sp = drop.steerSpeed * dt
-      x += (-Math.sin(state.yaw) * f + Math.cos(state.yaw) * s) * sp
-      z += (-Math.cos(state.yaw) * f - Math.sin(state.yaw) * s) * sp
-      const r = Math.hypot(x, z)
-      if (r > drop.radius) {
-        x *= drop.radius / r
-        z *= drop.radius / r
+      sim.acc += dt
+      while (sim.acc >= STEP && !state.ended) {
+        physics(STEP)
+        sim.acc -= STEP
       }
-      const hit = world.sweep(from, { x, y, z })
-      if (hit) {
-        ;({ x, y, z } = hit)
-        state.ended = true
-        state.contact = { kind: hit.kind, part: hit.part, speed: Math.hypot(state.vy, (f || s) && drop.steerSpeed), height: hit.y - world.R - hit.ground }
-      }
-      Object.assign(state, { x, y, z })
+      alpha = state.ended ? 1 : sim.acc / STEP
       if (state.ended) {
         frameLog.recording = false
         const sum = summarizeFrames(frameLog.ms)
@@ -121,10 +141,18 @@ export default function DropController({ drop, world, state, onEnd, enabled = tr
       }
     }
     if (world) state.agl = state.y - world.heightAt(state.x, state.z)
-    // a little buffeting at speed
-    const shake = enabled && !state.ended ? (state.vy / drop.terminalSpeed) * 0.004 : 0
-    camera.position.set(state.x, state.y, state.z)
-    camera.rotation.set(state.pitch + Math.sin(state.t * 23) * shake, state.yaw + Math.sin(state.t * 17) * shake, 0)
+    const p = sim.prev && alpha < 1 ? sim.prev : null
+    camera.position.set(p ? p.x + (state.x - p.x) * alpha : state.x, p ? p.y + (state.y - p.y) * alpha : state.y, p ? p.z + (state.z - p.z) * alpha : state.z)
+    // optional wind sway (setting, off by default): ±0.03°, slow (0.3–0.6 Hz)
+    let swayP = 0
+    let swayY = 0
+    if (sway && enabled && !state.ended && !state.frozen) {
+      const a = SWAY_RAD * Math.min(1, state.vy / drop.terminalSpeed)
+      const t = clock.elapsedTime
+      swayP = a * (0.6 * Math.sin(t * 2.1) + 0.4 * Math.sin(t * 3.7 + 1.3))
+      swayY = a * (0.6 * Math.sin(t * 1.7 + 0.5) + 0.4 * Math.sin(t * 2.9 + 2.1))
+    }
+    camera.rotation.set(state.pitch + swayP, state.yaw + swayY, 0)
   })
   return null
 }

@@ -497,7 +497,7 @@ function nativityRelief(b, portals, x0) {
     let k = 0.5
     for (const [zc, h, w] of portals) if (Math.abs(z - zc) < w * 0.6) k = Math.max(k, 1 - Math.abs(z - zc) / (w * 0.6))
     const edge = Math.min(1, (outline(z) - y) / 2.5)
-    const lumps = Math.pow(fbm2(z * 0.55, y * 0.45), 1.6) * 2.6
+    const lumps = Math.pow(fbm2(z * 0.7, y * 0.55), 1.4) * 3.4
     const folds = Math.abs(Math.sin(fbm2(z * 0.22 + 7, y * 0.18) * 9)) * 0.5
     const drips = Math.max(0, vnoise(z * 1.7, 3.1) - 0.55) * 3 * (0.6 + 0.4 * Math.sin(y * 0.9 + z))
     return (lumps + folds + drips) * k * edge
@@ -511,7 +511,8 @@ function nativityRelief(b, portals, x0) {
   }
   const C = (p) => {
     const d = p[0] - x0
-    const c = OLD.clone().multiplyScalar(0.62 + 0.16 * Math.min(d, 2.2) + 0.08 * hashN(p[1], p[2]))
+    // hollows dark, crests catching light (the façade is mostly in shade)
+    const c = OLD.clone().multiplyScalar(0.4 + 0.24 * Math.min(d, 2.6) + 0.1 * hashN(p[1], p[2]))
     return [c.r, c.g, c.b]
   }
   for (let i = 0; i < nz; i++)
@@ -523,10 +524,18 @@ function nativityRelief(b, portals, x0) {
       const bb = P(i + 1, j)
       const c = P(i + 1, j + 1)
       const d = P(i, j + 1)
-      // facing +x: (a, b, c) with z increasing then y up
-      for (const q of [a, bb, c, a, c, d]) {
+      // baked sky light: ledges facing up lighter, undersides and side walls
+      // of the lumps darker, so the relief reads in the shaded façade too
+      const ddz = (bb[0] - a[0] + c[0] - d[0]) / (2 * dz)
+      const ddy = (d[0] - a[0] + c[0] - bb[0]) / (2 * dy)
+      const nl = Math.hypot(1, ddy, ddz)
+      const sky = Math.min(1, Math.max(0, 0.55 + 0.6 * (-ddy / nl) + 0.35 * (1 / nl - 0.7)))
+      const shade = 0.5 + 0.6 * sky
+      // facing +x (outward): (a, c, b), (a, d, c)
+      for (const q of [a, c, bb, a, d, c]) {
         pos.push(...q)
-        col.push(...C(q))
+        const cc = C(q)
+        col.push(cc[0] * shade, cc[1] * shade, cc[2] * shade)
       }
     }
   const g = new THREE.BufferGeometry()
@@ -675,11 +684,11 @@ export function buildBasilica({ lod = 0 } = {}) {
       b.add('stone', gable(w * s, h * 0.45 * s, 5 - l), jitter(OLD, 0.06), [44.5 - l * 0.6, h * 0.55, z], [0, Math.PI / 2, 0])
       b.box('stone', jitter(OLD, 0.06), [5 - l, h * 0.55, w * s], [44.5 - l * 0.6, (h * 0.55) / 2, z])
     }
-    if (near) b.box('glass', new THREE.Color('#2a2622'), [0.3, h * 0.3, w * 0.35], [47.1, h * 0.15, z], undefined, { collider: false })
+    if (near) b.box('glass', new THREE.Color('#2a2622'), [0.3, h * 0.3, w * 0.44], [47.15, h * 0.15, z], undefined, { collider: false })
   }
   // sculpted relief over the portal faces: a displaced surface + figure groups
   if (near) {
-    const disp = nativityRelief(b, PORTALS, 44.6)
+    const disp = nativityRelief(b, PORTALS, 47.2) // in front of the portal blocks
     let fk = 0
     for (const [zc, h, w] of PORTALS)
       for (let tier = 0; tier < 4; tier++) {
@@ -687,8 +696,16 @@ export function buildBasilica({ lod = 0 } = {}) {
         const n = tier < 2 ? 3 : 2
         for (let q = 0; q < n; q++) {
           const z = zc + (q - (n - 1) / 2) * w * 0.26
-          figure(b, 44.6 + disp(z, y + 1) + 0.4, y, z, 2.4 + (fk++ % 3) * 0.4, 0, OLD)
+          figure(b, 47.2 + disp(z, y + 1) + 0.4, y, z, 2.4 + (fk++ % 3) * 0.4, 0, OLD)
         }
+      }
+    // stalactite drips hanging from the portal arches
+    for (const [zc, h, w] of PORTALS)
+      for (let q = 0; q < 14; q++) {
+        const u = (q / 13 - 0.5) * w * 0.9
+        const y = h * 0.55 + h * 0.45 * (1 - Math.abs(u) / (w / 2)) - 1.5
+        const L = 2 + hashN(q, zc) * 3
+        b.add('stone', new THREE.ConeGeometry(0.35 + hashN(zc, q) * 0.3, L, 6), jitter(OLD, 0.12), [47.2 + disp(zc + u, y) + 0.5, y - L / 2, zc + u], [Math.PI, 0, 0], undefined, { collider: false })
       }
   } else relief(b, 46, 0, 0, 40, 6, 50, 40, OLD)
   // the Tree of Life cypress with its white doves

@@ -5,7 +5,7 @@ import { clone as cloneSkinned } from 'three/examples/jsm/utils/SkeletonUtils.js
 import { SPECIES, MISSION } from '../characters/npcRig'
 import { plushMaterial } from '../characters/plush'
 import { gltfLoader } from '../world/loaders'
-import { ZONE_RADIUS, ZONE_LEAVE } from './zones'
+import { ZONE_RADIUS, ZONE_LEAVE } from './missionZones'
 
 /**
  * Animal NPCs of the mission zones (see zones.js): anthropomorphic, rigged

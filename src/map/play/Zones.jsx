@@ -1,7 +1,7 @@
 import { useEffect, useMemo } from 'react'
 import { useFrame } from '@react-three/fiber'
 import * as THREE from 'three'
-import { ZONE_RADIUS } from './zones'
+import { ZONE_RADIUS } from './missionZones'
 
 /**
  * Glowing markers of the five mission zones, visible from the start of the

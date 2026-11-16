@@ -11,7 +11,7 @@ import PlayHud from './play/PlayHud'
 import Player from './play/Player'
 import Npcs from './play/Npcs'
 import Zones from './play/Zones'
-import { placeZones } from './play/zones'
+import { placeZones } from './play/missionZones'
 
 // ?nochar (debug measurements): the world without the avatar and the animals
 const NOCHAR = typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('nochar')

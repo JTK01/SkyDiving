@@ -1239,6 +1239,18 @@ input {
   background: #fff;
   color: var(--navy);
 }
+.play-hud__found {
+  position: absolute;
+  left: clamp(16px, 3vw, 40px);
+  bottom: clamp(150px, 22vh, 190px);
+  margin: 0;
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: rgba(14, 31, 54, 0.45);
+  color: #ffe9a8;
+  font-size: 12.5px;
+  font-weight: 600;
+}
 .play-hud__toggle {
   pointer-events: auto;
   border: 1px solid rgba(255, 255, 255, 0.5);

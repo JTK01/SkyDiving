@@ -6,6 +6,7 @@ import { makeClip, skinnedMesh } from '../characters/builder'
 import { plushMaterial } from '../characters/plush'
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js'
 import { withAerial } from '../world/aerial'
+import { blobShadow } from './Npcs'
 
 /**
  * The player's avatar, driven by the drop state (third-person view):
@@ -54,7 +55,8 @@ export default function Player({ state }) {
     rig.add(canopy, lines)
     rig.position.y = HIPS
     rig.visible = false
-    return { material, canopyMat, levels, rig, current: null, last: new THREE.Vector3(), speed: 0 }
+    const shadow = blobShadow(1)
+    return { material, canopyMat, levels, rig, shadow, current: null, last: new THREE.Vector3(), speed: 0 }
   }, [])
   useEffect(
     () => () => {
@@ -114,19 +116,29 @@ export default function Player({ state }) {
     res.levels[0].mesh.visible = d < NEAR
     res.levels[1].mesh.visible = d >= NEAR
     res.levels.forEach((l) => l.mixer.update(dt))
+    // contact shadow on foot (world space: the group is not its parent)
+    res.shadow.visible = onFoot && !first
+    if (onFoot) {
+      res.shadow.setMatrixAt(0, new THREE.Matrix4().compose(new THREE.Vector3(s.x, feet + 0.07, s.z), new THREE.Quaternion(), new THREE.Vector3(0.75, 1, 0.75)))
+      res.shadow.instanceMatrix.needsUpdate = true
+    }
     // canopy: unfolds over the opening time, stays over the landing
     const open = s.canopy ? Math.min(1, s.canopyT ?? 1) : 0
     res.rig.visible = open > 0 && !(onFoot && s.walk.t > 1.5)
     res.rig.scale.set(0.2 + 0.8 * open, 0.3 + 0.7 * open, 0.2 + 0.8 * open)
-    if (onFoot) res.rig.rotation.x = Math.min(1.4, s.walk.t * 1.2) // collapses behind
+    if (onFoot)
+      res.rig.rotation.x = Math.min(1.4, s.walk.t * 1.2) // collapses behind
     else res.rig.rotation.x = 0
   })
 
   return (
-    <group ref={group}>
-      <primitive object={res.levels[0].mesh} />
-      <primitive object={res.levels[1].mesh} />
-      <primitive object={res.rig} />
-    </group>
+    <>
+      <primitive object={res.shadow} />
+      <group ref={group}>
+        <primitive object={res.levels[0].mesh} />
+        <primitive object={res.levels[1].mesh} />
+        <primitive object={res.rig} />
+      </group>
+    </>
   )
 }

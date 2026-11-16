@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react'
 import Credits from './Credits'
 import { WALK } from './DropController'
+import { MISSION, SPECIES } from '../characters/animals'
 import { useQuality, PRESETS, BENCH } from '../quality'
 
 /** 저/중/고 quality switch (auto-picked at first, the choice is remembered) */
@@ -93,6 +94,7 @@ export default function PlayHud({ map, manifest, state, ended, onRestart, onExit
   const spd = useRef()
   const dist = useRef()
   const hint = useRef()
+  const found = useRef()
   useEffect(() => {
     let id
     const tick = () => {
@@ -102,6 +104,12 @@ export default function PlayHud({ map, manifest, state, ended, onRestart, onExit
         dist.current.textContent = Math.round(Math.hypot(state.x, state.z))
         const h = hintText(state.ended ? state.walk : null, state)
         if (hint.current && hint.current.textContent !== h) hint.current.textContent = h
+        if (found.current) {
+          const f = state.found ? [...state.found] : []
+          const txt = `발견한 동물 ${f.length} / ${MISSION.length}` + (f.length ? ` · ${f.map((id) => SPECIES[id].name).join(', ')}` : '')
+          if (found.current.textContent !== txt) found.current.textContent = txt
+          found.current.hidden = !state.walk
+        }
       }
       id = requestAnimationFrame(tick)
     }
@@ -148,6 +156,7 @@ export default function PlayHud({ map, manifest, state, ended, onRestart, onExit
           </dd>
         </div>
       </dl>
+      <p className="play-hud__found" ref={found} hidden />
       <p className="play-hud__hint" ref={hint}>{hintText(ended ? state.walk : null, state)}</p>
       <footer className="play-hud__credits">
         <Credits manifest={manifest} />

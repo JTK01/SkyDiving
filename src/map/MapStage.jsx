@@ -9,6 +9,7 @@ import { loadCollisionWorld } from './play/collision'
 import { BASILICA_COLLIDERS_URL } from './world/Basilica'
 import PlayHud from './play/PlayHud'
 import Player from './play/Player'
+import Npcs from './play/Npcs'
 
 /**
  * One map's world on screen — the long-range preview, the entry transition
@@ -207,6 +208,7 @@ export default function MapStage({ map, mode, anchor, fromRect, onEntered, onExi
           {mode === 'entering' && ready.preview && <EnterFlight to={dropPose(state)} fov={70} onDone={onEntered} />}
           <ShadowSwitch enabled={playing && preset(quality).shadows > 0} />
           {playing && ready.play && world && <Player key={`p${run}`} state={state} />}
+          {playing && ready.play && world && <Npcs world={world} landmark={map.world.landmark} state={state} />}
           {playing && <DropController key={run} drop={drop} world={world} state={state} enabled={ready.play && !!world} onEnd={() => setEnded(true)} />}
         </Canvas>
       )}

@@ -18,8 +18,9 @@ import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js
  * a few segments and no small details (detail parts are skipped).
  */
 export class CharacterBuilder {
-  constructor(lod = 0) {
+  constructor(lod = 0, { segScale = 1 } = {}) {
     this.lod = lod
+    this.segScale = segScale
     this.parts = []
     this.bones = []
     this.boneIndex = new Map()
@@ -33,7 +34,7 @@ export class CharacterBuilder {
 
   /** segment count scaled for the LOD */
   seg(n, min = 3) {
-    return this.lod === 0 ? n : Math.max(min, Math.round(n / 3))
+    return this.lod === 0 ? Math.max(min, Math.round(n * this.segScale)) : Math.max(min, Math.round(n / 3))
   }
 
   /**

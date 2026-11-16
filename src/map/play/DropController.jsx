@@ -244,7 +244,11 @@ export default function DropController({ drop, world, state, onEnd, enabled = tr
       walkStep(Math.min(rawDt, 0.1))
       state.y = w.feet + WALK.eye
       state.agl = w.feet - world.heightAt(state.x, state.z)
-      if (state.view === 'first') {
+      if (state.camOverride) {
+        // ?debug captures: a fixed camera { pos: [x, y, z], look: [x, y, z] }
+        camera.position.set(...state.camOverride.pos)
+        camera.lookAt(...state.camOverride.look)
+      } else if (state.view === 'first') {
         camera.position.set(state.x, state.y, state.z)
         camera.rotation.set(state.pitch, state.yaw, 0)
       } else if (state.photoT > 0 && state.face !== undefined) {

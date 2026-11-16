@@ -8,6 +8,7 @@ import DropController, { createDropState } from './play/DropController'
 import { loadCollisionWorld } from './play/collision'
 import { BASILICA_COLLIDERS_URL } from './world/Basilica'
 import PlayHud from './play/PlayHud'
+import Player from './play/Player'
 
 /**
  * One map's world on screen — the long-range preview, the entry transition
@@ -170,7 +171,8 @@ export default function MapStage({ map, mode, anchor, fromRect, onEntered, onExi
   const shown = ready.preview // the world is visible once coarse data is in; play waits for near data below
 
   const restart = () => {
-    Object.assign(state, createDropState(drop, manifest.frame.groundY, map.world.landmark.rotationDeg))
+    const view = state.view // keep the chosen camera view across drops
+    Object.assign(state, createDropState(drop, manifest.frame.groundY, map.world.landmark.rotationDeg), { view, face: undefined, deployReq: false })
     setEnded(false)
     setRun((r) => r + 1)
   }
@@ -204,6 +206,7 @@ export default function MapStage({ map, mode, anchor, fromRect, onEntered, onExi
           {mode === 'preview' && <PreviewOrbit orbit={orbit} groundY={manifest.frame.groundY} clock={clock} />}
           {mode === 'entering' && ready.preview && <EnterFlight to={dropPose(state)} fov={70} onDone={onEntered} />}
           <ShadowSwitch enabled={playing && preset(quality).shadows > 0} />
+          {playing && ready.play && world && <Player key={`p${run}`} state={state} />}
           {playing && <DropController key={run} drop={drop} world={world} state={state} enabled={ready.play && !!world} onEnd={() => setEnded(true)} />}
         </Canvas>
       )}

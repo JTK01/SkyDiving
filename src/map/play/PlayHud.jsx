@@ -70,16 +70,18 @@ function BenchResult({ b }) {
 }
 
 /** controls hint: free fall, on foot (ground / roof), or look-only on the basilica */
-function hintText(walk) {
-  if (!walk) return 'WASD / 방향키 이동 · 드래그로 시점'
+function hintText(walk, state) {
+  if (!walk && state?.canopy) return 'A/D 선회 · W 가속 · S 브레이크 · 드래그로 시점 · V 1·3인칭'
+  if (!walk) return 'WASD / 방향키 이동 · SPACE 낙하산 · 드래그로 시점 · V 1·3인칭'
   if (walk.mode === 'look') return '성당 위에서는 둘러보기만 할 수 있어요 · 드래그로 시점'
-  if (walk.mode === 'roof') return 'WASD 걷기 · Shift 달리기 · 드래그로 시점 (이 지붕 위에서만)'
-  return `WASD 걷기 · Shift 달리기 · 드래그로 시점 (착지 지점 반경 ${WALK.radius} m)`
+  if (walk.mode === 'roof') return 'WASD 걷기 · Shift 달리기 · P 사진 포즈 · V 1·3인칭 (이 지붕 위에서만)'
+  return `WASD 걷기 · Shift 달리기 · P 사진 포즈 · V 1·3인칭 (착지 지점 반경 ${WALK.radius} m)`
 }
 
 /** what the jumper touched (state.contact from DropController) */
 function contactText(c) {
   if (!c) return '낙하가 끝났습니다.'
+  if (c.soft) return c.kind === 'ground' ? '낙하산으로 착지했습니다.' : c.kind === 'building' ? '낙하산으로 건물 옥상에 착지했습니다.' : '낙하산으로 성당 위에 내려앉았습니다.'
   if (c.kind === 'ground') return '지면에 닿았습니다.'
   if (c.kind === 'building') return c.part === 'roof' ? '건물 옥상에 닿았습니다.' : '건물 벽에 부딪혔습니다.'
   return c.part === 'tower' ? '사그라다 파밀리아 첨탑에 닿았습니다.' : '사그라다 파밀리아 성당에 닿았습니다.'
@@ -90,6 +92,7 @@ export default function PlayHud({ map, manifest, state, ended, onRestart, onExit
   const alt = useRef()
   const spd = useRef()
   const dist = useRef()
+  const hint = useRef()
   useEffect(() => {
     let id
     const tick = () => {
@@ -97,6 +100,8 @@ export default function PlayHud({ map, manifest, state, ended, onRestart, onExit
         alt.current.textContent = Math.max(0, Math.round(state.agl)).toLocaleString('en-US')
         spd.current.textContent = Math.round(state.vy * 3.6)
         dist.current.textContent = Math.round(Math.hypot(state.x, state.z))
+        const h = hintText(state.ended ? state.walk : null, state)
+        if (hint.current && hint.current.textContent !== h) hint.current.textContent = h
       }
       id = requestAnimationFrame(tick)
     }
@@ -143,7 +148,7 @@ export default function PlayHud({ map, manifest, state, ended, onRestart, onExit
           </dd>
         </div>
       </dl>
-      <p className="play-hud__hint">{hintText(ended ? state.walk : null)}</p>
+      <p className="play-hud__hint" ref={hint}>{hintText(ended ? state.walk : null, state)}</p>
       <footer className="play-hud__credits">
         <Credits manifest={manifest} />
       </footer>

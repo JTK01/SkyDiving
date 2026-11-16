@@ -217,7 +217,8 @@ export default function Npcs({ world, landmark, state }) {
     const t = res.clock
     for (const g of Object.values(res.groups)) if (g.mat.userData.shader) g.mat.userData.shader.uniforms.uTime.value = t
     const cam = camera.position
-    const far = Math.hypot(cam.x - res.npcs[0].home[0], cam.z - res.npcs[0].home[1]) > CULL + 150 && cam.y - world.heightAt(cam.x, cam.z) > 200
+    // from high up (> 200 m) or far away the animals are below a pixel: skip them
+    const far = Math.hypot(cam.x - res.npcs[0].home[0], cam.z - res.npcs[0].home[1]) > CULL || cam.y - world.heightAt(cam.x, cam.z) > 200
     for (const g of Object.values(res.groups)) g.meshes.forEach((m) => (m.visible = !far))
     res.shadows.visible = !far
     if (far) return

@@ -11,6 +11,9 @@ import PlayHud from './play/PlayHud'
 import Player from './play/Player'
 import Npcs from './play/Npcs'
 
+// ?nochar (debug measurements): the world without the avatar and the animals
+const NOCHAR = typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('nochar')
+
 /**
  * One map's world on screen — the long-range preview, the entry transition
  * and the skydive all use this single canvas and data cache.
@@ -207,8 +210,8 @@ export default function MapStage({ map, mode, anchor, fromRect, onEntered, onExi
           {mode === 'preview' && <PreviewOrbit orbit={orbit} groundY={manifest.frame.groundY} clock={clock} />}
           {mode === 'entering' && ready.preview && <EnterFlight to={dropPose(state)} fov={70} onDone={onEntered} />}
           <ShadowSwitch enabled={playing && preset(quality).shadows > 0} />
-          {playing && ready.play && world && <Player key={`p${run}`} state={state} />}
-          {playing && ready.play && world && <Npcs world={world} landmark={map.world.landmark} state={state} />}
+          {playing && ready.play && world && !NOCHAR && <Player key={`p${run}`} state={state} />}
+          {playing && ready.play && world && !NOCHAR && <Npcs world={world} landmark={map.world.landmark} state={state} />}
           {playing && <DropController key={run} drop={drop} world={world} state={state} enabled={ready.play && !!world} onEnd={() => setEnded(true)} />}
         </Canvas>
       )}

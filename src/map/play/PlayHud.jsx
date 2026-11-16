@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react'
 import Credits from './Credits'
 import { WALK } from './DropController'
-import { MISSION, SPECIES } from '../characters/animals'
+import { MISSION, SPECIES } from '../characters/npcRig'
 import { useQuality, PRESETS, BENCH } from '../quality'
 
 /** 저/중/고 quality switch (auto-picked at first, the choice is remembered) */
@@ -106,7 +106,7 @@ export default function PlayHud({ map, manifest, state, ended, onRestart, onExit
         if (hint.current && hint.current.textContent !== h) hint.current.textContent = h
         if (found.current) {
           const f = state.found ? [...state.found] : []
-          const txt = `발견한 동물 ${f.length} / ${MISSION.length}` + (f.length ? ` · ${f.map((id) => SPECIES[id].name).join(', ')}` : '')
+          const txt = (state.zone ? `${state.zone} · ` : '') + `발견한 동물 ${f.length} / ${MISSION.length}` + (f.length ? ` · ${f.map((id) => SPECIES[id].name).join(', ')}` : '')
           if (found.current.textContent !== txt) found.current.textContent = txt
           found.current.hidden = !state.walk
         }

@@ -10,6 +10,8 @@ import { BASILICA_COLLIDERS_URL } from './world/Basilica'
 import PlayHud from './play/PlayHud'
 import Player from './play/Player'
 import Npcs from './play/Npcs'
+import Zones from './play/Zones'
+import { placeZones } from './play/zones'
 
 // ?nochar (debug measurements): the world without the avatar and the animals
 const NOCHAR = typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('nochar')
@@ -166,7 +168,8 @@ export default function MapStage({ map, mode, anchor, fromRect, onEntered, onExi
       live = false
     }
   }, [mode, ready.play, manifest, data, map, drop])
-  if (state && typeof window !== 'undefined' && window.__skydive) window.__skydive.drop = { state, data, world }
+  const zones = useMemo(() => world && placeZones(world, map.world.landmark), [world, map])
+  if (state && typeof window !== 'undefined' && window.__skydive) window.__skydive.drop = { state, data, world, zones }
   const [ended, setEnded] = useState(false)
   const [run, setRun] = useState(0)
   const [firstFrame, setFirstFrame] = useState(false)
@@ -211,7 +214,8 @@ export default function MapStage({ map, mode, anchor, fromRect, onEntered, onExi
           {mode === 'entering' && ready.preview && <EnterFlight to={dropPose(state)} fov={70} onDone={onEntered} />}
           <ShadowSwitch enabled={playing && preset(quality).shadows > 0} />
           {playing && ready.play && world && !NOCHAR && <Player key={`p${run}`} state={state} />}
-          {playing && ready.play && world && !NOCHAR && <Npcs world={world} landmark={map.world.landmark} state={state} />}
+          {playing && ready.play && world && zones && <Zones zones={zones} />}
+          {playing && ready.play && world && zones && !NOCHAR && <Npcs world={world} zones={zones} state={state} />}
           {playing && <DropController key={run} drop={drop} world={world} state={state} enabled={ready.play && !!world} onEnd={() => setEnded(true)} />}
         </Canvas>
       )}

@@ -10,8 +10,9 @@
 | `public/models/trees/trees.glb` (4종 × 2 LOD) | `tools/map-data/build_trees.mjs` ← `src/map/world/treeGeometry.js` | glb, meshopt, 178 kB | 자체 제작 |
 | `public/textures/trees.ktx2` (잎 카드 4종 + 수피 4종) | `tools/map-data/build_tree_textures.py` | KTX2 357 kB | 자체 제작(절차적 그림) |
 | `public/textures/tree_impostors.ktx2` (반구 8×8 방향 임포스터) | `tools/map-data/build_trees.mjs` (헤드리스 Chromium에서 베이크) | KTX2 519 kB | 자체 제작 |
-| 플레이어 아바타·낙하산 (근거리 9.6k / 원거리 1.8k 삼각형, 낙하산 324 삼각형 + 줄 40개, 애니메이션 6종) | `src/map/characters/player.js`, `builder.js` (런타임 절차적 생성) | 코드에 포함, 파일 없음 | 자체 디자인(참고 이미지의 비율·스타일만 참고) |
-| 동물 NPC 11종 (근거리 1.5–3.6k / 원거리 0.5–1.5k 삼각형, 클립 3종) | `src/map/characters/animals.js`, `play/Npcs.jsx` (런타임 생성, 포즈 텍스처는 실행 시 계산) | 코드에 포함 | 자체 디자인 |
+| `public/models/characters/player.glb` (근거리 10.2k / 원거리 2.3k 삼각형, 뼈대 19개, 클립 6종, 모프 blink·smile) | `tools/map-data/build_player.mjs` ← `src/map/characters/playerRig.js`, `face.js`, `sdf.js` | glb, meshopt, 101 kB | 자체 디자인(참고 이미지의 비율·스타일만 참고) |
+| 낙하산 (324 삼각형 + 줄 40개) | `src/map/characters/player.js` (런타임 생성) | 코드에 포함 | 자체 디자인 |
+| `public/models/characters/npcs.glb` (의인화 NPC 11종 × 2 LOD, 근거리 6.1–7.0k / 원거리 1.9–2.4k 삼각형, 클립 3종) | `tools/map-data/build_npcs.mjs` ← `src/map/characters/npcRig.js` | glb, meshopt, 652 kB (구역 진입 시 로드) | 자체 디자인 |
 | `public/textures/buildings.ktx2`, `detail_normal.ktx2` | `tools/map-data/build_textures.py` | KTX2 | 자체 제작 |
 
 ## 참고 자료 (에셋에는 포함되지 않음)

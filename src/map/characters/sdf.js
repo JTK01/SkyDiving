@@ -149,6 +149,7 @@ export function partWeights(parts, positions, sigma = 0.025) {
   const joints = new Uint16Array(n * 4)
   const weights = new Float32Array(n * 4)
   const colors = new Float32Array(n * 3)
+  const regions = new Float32Array(n)
   for (let v = 0; v < n; v++) {
     const p = [positions[v * 3], positions[v * 3 + 1], positions[v * 3 + 2]]
     const d = parts.map((q) => q.f(p))
@@ -165,10 +166,12 @@ export function partWeights(parts, positions, sigma = 0.025) {
       joints[v * 4 + k] = b
       weights[v * 4 + k] = w / sum
     })
-    // colour from the nearest part
+    // colour (and palette region) from the nearest part: color may be
+    // [r, g, b], { c: [r, g, b], r: region } or a function of p returning either
     const near = parts[d.indexOf(dmin)]
     const c = typeof near.color === 'function' ? near.color(p) : near.color
-    colors.set(c, v * 3)
+    colors.set(c.c || c, v * 3)
+    regions[v] = c.r ?? 3
   }
-  return { joints, weights, colors }
+  return { joints, weights, colors, regions }
 }

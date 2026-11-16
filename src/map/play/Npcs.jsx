@@ -1,61 +1,28 @@
-import { useEffect, useMemo } from 'react'
+import { useEffect, useMemo, useRef } from 'react'
 import { useFrame, useThree } from '@react-three/fiber'
 import * as THREE from 'three'
-import { SPECIES, MISSION, AMBIENT, CLIPS, buildAnimal, animalPose } from '../characters/animals'
-import { skinMatrices } from '../characters/builder'
+import { clone as cloneSkinned } from 'three/examples/jsm/utils/SkeletonUtils.js'
+import { SPECIES, MISSION } from '../characters/npcRig'
 import { plushMaterial } from '../characters/plush'
+import { gltfLoader } from '../world/loaders'
+import { ZONE_RADIUS, ZONE_LEAVE } from './zones'
 
 /**
- * Animal NPCs in the mission area: the two squares beside the basilica
- * (Plaça de la Sagrada Família, west; Plaça de Gaudí, east).
- *  - the five mission animals (bull, Iberian lynx, rabbit, dragon, Catalan
- *    wildcat) stand near fixed spots; finding one (walking within 6 m)
- *    counts it in state.found
- *  - general animals (donkey, monk parakeet, pigeon, dog, gull, hedgehog)
- *    wander around the squares
- * Behaviour per animal: idle → walk to a nearby free spot → idle …; on
- * discovery a hop toward the player with a "!" bubble.
+ * Animal NPCs of the mission zones (see zones.js): anthropomorphic, rigged
+ * on the player's skeleton (public/models/characters/npcs.glb, built by
+ * tools/map-data/build_npcs.mjs), playing idle / walk / react with blink and
+ * smile expressions.
  *
- * Rendering: animation instancing. Each species' clips (idle, walk, react)
- * are sampled once into a pose texture (3 texels per bone matrix, one row
- * per frame); one InstancedMesh per species and level (near < 25 m with all
- * details, far beyond) skins every animal in the vertex shader. Per instance:
- * clip / start time, palette (3 colours) and the prop mask.
+ * A zone's NPCs exist only while the player is on foot inside it (landed in
+ * it or walked in): they are created on entry and removed on leaving. The
+ * glb is fetched on the first entry — outside the zones nothing of the NPCs
+ * is loaded. Behaviour: idle → walk to a nearby free spot → idle …; walking
+ * up to one (6 m) makes it turn, wave and smile ('!' bubble); the zone's
+ * mission animal is then counted in state.found.
  */
-const FPS = { idle: 12, walk: 16, react: 12 }
+const URL = `${import.meta.env.BASE_URL || '/'}models/characters/npcs.glb`
 const NEAR = 25
-const CULL = 350
 const REACT_R = 6
-
-// placement in the basilica frame (x toward Nativity, z toward Glory), metres
-const SQUARES = { west: [-100, 0], east: [100, 0] }
-const MISSION_SPOTS = { bull: ['west', -6, -12], lynx: ['west', 9, 11], dragon: ['east', -5, 14], rabbit: ['east', 2, -11], wildcat: ['east', 12, 4] }
-const AMBIENT_COUNT = { donkey: 2, parakeet: 3, pigeon: 4, dog: 2, gull: 2, hedgehog: 2 }
-
-let seed = 7
-const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647)
-
-function poseTexture(id, bones) {
-  const rows = []
-  const clips = {}
-  for (const [clip, dur] of Object.entries(CLIPS)) {
-    const frames = Math.round(dur * FPS[clip])
-    clips[clip] = { row: rows.length, frames, fps: FPS[clip] * (clip === 'react' ? -1 : 1) }
-    const pose = animalPose(id, clip)
-    for (let f = 0; f < frames; f++) rows.push(skinMatrices(bones, pose((f / frames) * dur, dur)))
-  }
-  const w = bones.length * 3
-  const data = new Float32Array(w * rows.length * 4)
-  rows.forEach((mats, r) =>
-    mats.forEach((m, b) => {
-      const e = m.elements // column-major
-      for (let k = 0; k < 3; k++) data.set([e[k], e[4 + k], e[8 + k], e[12 + k]], (r * w + b * 3 + k) * 4)
-    }),
-  )
-  const tex = new THREE.DataTexture(data, w, rows.length, THREE.RGBAFormat, THREE.FloatType)
-  tex.needsUpdate = true
-  return { tex, clips }
-}
 
 /** soft round contact shadow (shared by the NPCs and the player) */
 export function blobShadow(count) {
@@ -69,7 +36,7 @@ export function blobShadow(count) {
   g.fillRect(0, 0, 64, 64)
   const tex = new THREE.CanvasTexture(c)
   const geo = new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2)
-  const mat = new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2 })
+  const mat = new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false })
   const m = new THREE.InstancedMesh(geo, mat, count)
   m.frustumCulled = false
   m.renderOrder = 1
@@ -94,225 +61,228 @@ function bubbleTexture() {
   return t
 }
 
-export default function Npcs({ world, landmark, state }) {
-  const camera = useThree((s) => s.camera)
-  const res = useMemo(() => {
-    seed = 7
-    const rot = (landmark.rotationDeg * Math.PI) / 180
-    const c = Math.cos(rot)
-    const s = Math.sin(rot)
-    const toWorld = (mx, mz) => [landmark.x + c * mx + s * mz, landmark.z - s * mx + c * mz]
-    const free = (x, z) => {
-      for (let k = 0; k < 40; k++) {
-        const a = k * 2.39996
-        const d = k ? 0.8 * Math.sqrt(k) : 0
-        const px = x + Math.cos(a) * d
-        const pz = z + Math.sin(a) * d
-        if (!world.blocked(px, world.heightAt(px, pz), pz, 0.5, 1)) return [px, pz]
-      }
-      return [x, z]
-    }
-    // animals
-    const npcs = []
-    for (const id of MISSION) {
-      const [sq, dx, dz] = MISSION_SPOTS[id]
-      const [hx, hz] = free(...toWorld(SQUARES[sq][0] + dx, SQUARES[sq][1] + dz))
-      npcs.push({ id, home: [hx, hz], roam: 4, mission: true })
-    }
-    for (const id of AMBIENT)
-      for (let k = 0; k < AMBIENT_COUNT[id]; k++) {
-        const sq = k % 2 ? 'east' : 'west'
-        const [hx, hz] = free(...toWorld(SQUARES[sq][0] + (rnd() - 0.5) * 36, SQUARES[sq][1] + (rnd() - 0.5) * 36))
-        npcs.push({ id, home: [hx, hz], roam: 10, mission: false })
-      }
-    for (const n of npcs) {
-      const S = SPECIES[n.id]
-      n.x = n.home[0]
-      n.z = n.home[1]
-      n.heading = rnd() * Math.PI * 2
-      n.mode = 'idle'
-      n.timer = 1 + rnd() * 4
-      n.cool = 0
-      n.scale = S.scale * (0.92 + rnd() * 0.16)
-      n.speed = S.body === 'bird' ? 0.5 : S.body === 'hop' ? 1.1 : 0.5 + S.scale * 0.35
-      n.palette = S.palettes[Math.floor(rnd() * S.palettes.length)].map((h) => new THREE.Color(h))
-      n.props = S.props.reduce((m, p) => (rnd() < 0.6 ? m | (1 << (p - 1)) : m), 0)
-      n.phase = rnd() * 10
-    }
-    // per species: geometry (2 levels), pose texture, material, instanced meshes
-    const groups = {}
-    for (const id of [...MISSION, ...AMBIENT]) {
-      const list = npcs.filter((n) => n.id === id)
-      const lv = [buildAnimal(id, 0), buildAnimal(id, 1)]
-      const { tex, clips } = poseTexture(id, lv[0].bones)
-      const mat = plushMaterial({ instanced: true, poses: tex })
-      const N = list.length
-      const attr = {
-        aClip: new THREE.InstancedBufferAttribute(new Float32Array(N * 4), 4),
-        aColA: new THREE.InstancedBufferAttribute(new Float32Array(N * 3), 3),
-        aColB: new THREE.InstancedBufferAttribute(new Float32Array(N * 3), 3),
-        aColC: new THREE.InstancedBufferAttribute(new Float32Array(N * 3), 3),
-        aPropMask: new THREE.InstancedBufferAttribute(new Float32Array(N), 1),
-      }
-      list.forEach((n, i) => {
-        n.palette[0].toArray(attr.aColA.array, i * 3)
-        n.palette[1].toArray(attr.aColB.array, i * 3)
-        n.palette[2].toArray(attr.aColC.array, i * 3)
-        attr.aPropMask.array[i] = n.props
-        n.group = id
-        n.index = i
-      })
-      const meshes = lv.map((l) => {
-        for (const [k, a] of Object.entries(attr)) l.geometry.setAttribute(k, a)
-        const m = new THREE.InstancedMesh(l.geometry, mat, N)
-        m.frustumCulled = false
-        m.receiveShadow = true
-        return m
-      })
-      groups[id] = { list, meshes, mat, tex, clips, attr, tris: lv.map((l) => l.geometry.attributes.position.count / 3) }
-    }
-    // "!" bubbles
-    const bubbleTex = bubbleTexture()
-    const bubbles = npcs.map(() => {
-      const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: bubbleTex, depthTest: false, transparent: true }))
-      sp.scale.setScalar(0.45)
-      sp.visible = false
-      sp.renderOrder = 10
-      return sp
-    })
-    const shadows = blobShadow(npcs.length)
-    return { npcs, groups, bubbles, bubbleTex, shadows, clock: 0 }
-  }, [world, landmark])
+let seed = 11
+const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647)
 
+export default function Npcs({ world, zones, state }) {
+  const { camera, gl } = useThree()
+  const root = useRef()
+  const res = useMemo(() => ({ gltf: null, loading: null, active: new Map(), shadows: blobShadow(16), bubbleTex: bubbleTexture(), clock: 0 }), [])
   useEffect(() => {
-    if (typeof window !== 'undefined' && window.__skydive) window.__skydive.npcs = Object.assign(res, { setClip: (n, c) => setClip(n, c, res.clock) })
+    if (typeof window !== 'undefined' && window.__skydive)
+      window.__skydive.npcs = Object.assign(res, {
+        // ?debug captures: an extra NPC of any species, posed in place (no wandering)
+        debugSpawn: async (id, x, z, heading = 0) => {
+          if (!res.gltf) await new Promise((ok) => gltfLoader(gl).load(URL, (g) => ok((res.gltf = g))))
+          const n = makeNpc(id, x, z, false)
+          Object.assign(n, { zone: { x, z }, heading, timer: 1e9, cool: 1e9, bubbleSprite: new THREE.Sprite() })
+          root.current.add(n.scene)
+          const list = res.active.get('debug') || []
+          list.push(n)
+          res.active.set('debug', list)
+          return true
+        },
+      })
     return () => {
-      for (const g of Object.values(res.groups)) {
-        g.meshes.forEach((m) => m.geometry.dispose())
-        g.mat.dispose()
-        g.tex.dispose()
-      }
-      res.bubbles.forEach((b) => b.material.dispose())
+      for (const z of res.active.keys()) despawn(z)
       res.shadows.geometry.dispose()
       res.shadows.material.map.dispose()
       res.shadows.material.dispose()
       res.bubbleTex.dispose()
     }
-  }, [res])
+  }, [res]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  const setClip = (n, clip, t) => {
-    const g = res.groups[n.group]
-    const c = g.clips[clip]
-    // loops start with a per-animal phase so neighbours are not in step
-    g.attr.aClip.array.set([c.row, c.frames, clip === 'react' ? t : t - n.phase, c.fps], n.index * 4)
-    g.attr.aClip.needsUpdate = true
-    n.clip = clip
+  /** one NPC: a clone of the glb with only this species' two meshes */
+  const makeNpc = (id, x, z, mission) => {
+    const S = SPECIES[id]
+    const scene = cloneSkinned(res.gltf.scene)
+    const pal = S.palettes[Math.floor(rnd() * S.palettes.length)]
+    const palette = { a: new THREE.Color(pal[0]), b: new THREE.Color(pal[1]), c: new THREE.Color(pal[2]), mask: S.props.reduce((m, p) => (rnd() < 0.65 ? m | (1 << (p - 1)) : m), 0) }
+    const mat = plushMaterial({ palette })
+    const keep = []
+    scene.traverse((o) => {
+      if (!o.isSkinnedMesh) return
+      let n = o
+      while (n && !/_lod\d/.test(n.name || '')) n = n.parent
+      const m = n && /^(.+)_lod(\d)$/.exec(n.name)
+      if (m && m[1] === id) {
+        if (o.geometry.attributes.uv && !o.geometry.attributes.aPal) o.geometry.setAttribute('aPal', o.geometry.attributes.uv)
+        o.material = mat
+        o.frustumCulled = false
+        o.userData.level = +m[2]
+        keep.push(o)
+      } else o.visible = false
+    })
+    // drop the other species' meshes from the clone
+    scene.traverse((o) => {
+      if (o.isSkinnedMesh && !keep.includes(o)) o.userData.drop = true
+    })
+    const drops = []
+    scene.traverse((o) => o.userData.drop && drops.push(o))
+    drops.forEach((o) => o.parent.remove(o))
+    scene.scale.setScalar(S.scale)
+    const mixer = new THREE.AnimationMixer(scene)
+    const actions = {}
+    for (const clip of res.gltf.animations) {
+      const a = mixer.clipAction(clip)
+      if (clip.name === 'react') {
+        a.setLoop(THREE.LoopOnce)
+        a.clampWhenFinished = true
+      }
+      actions[clip.name] = a
+    }
+    actions.idle.time = rnd() * 4
+    actions.idle.play()
+    return { id, mission, scene, mat, mixer, actions, clip: 'idle', meshes: keep, x, z, home: [x, z], heading: rnd() * Math.PI * 2, mode: 'idle', timer: 1 + rnd() * 3, cool: 0, bubble: 0, smile: 0, blinkAt: rnd() * 4, speed: 0.75 + rnd() * 0.3 }
   }
 
-  const o = useMemo(() => new THREE.Object3D(), [])
-  const zero = useMemo(() => new THREE.Matrix4().makeScale(0, 0, 0), [])
+  const play = (n, name) => {
+    if (n.clip === name) return
+    const next = n.actions[name]
+    next.reset().play()
+    n.actions[n.clip].crossFadeTo(next, 0.25, false)
+    n.clip = name
+  }
+
+  const freeSpot = (cx, cz, r) => {
+    for (let q = 0; q < 20; q++) {
+      const a = rnd() * Math.PI * 2
+      const d = Math.sqrt(rnd()) * r
+      const x = cx + Math.cos(a) * d
+      const z = cz + Math.sin(a) * d
+      if (!world.blocked(x, world.heightAt(x, z), z, 0.4, 1.4)) return [x, z]
+    }
+    return [cx, cz]
+  }
+
+  const spawn = (zone) => {
+    const list = []
+    const [mx, mz] = freeSpot(zone.x + 3, zone.z, 3)
+    list.push(makeNpc(zone.mission, mx, mz, true))
+    for (const id of zone.ambient) {
+      const [x, z] = freeSpot(zone.x, zone.z, ZONE_RADIUS - 6)
+      list.push(makeNpc(id, x, z, false))
+    }
+    for (const n of list) {
+      n.zone = zone
+      n.bubbleSprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: res.bubbleTex, transparent: true }))
+      n.bubbleSprite.scale.setScalar(0.45)
+      n.bubbleSprite.visible = false
+      root.current.add(n.scene, n.bubbleSprite)
+    }
+    res.active.set(zone.id, list)
+  }
+  function despawn(id) {
+    for (const n of res.active.get(id) || []) {
+      n.mixer.stopAllAction()
+      n.scene.parent?.remove(n.scene)
+      n.bubbleSprite.parent?.remove(n.bubbleSprite)
+      n.bubbleSprite.material.dispose()
+      n.mat.dispose()
+      n.scene.traverse((o) => o.isSkinnedMesh && o.skeleton.dispose()) // geometries are shared with the glb
+    }
+    res.active.delete(id)
+  }
+
   useFrame((_, rawDt) => {
     const dt = Math.min(rawDt, 0.1)
     res.clock += dt
-    const t = res.clock
-    for (const g of Object.values(res.groups)) if (g.mat.userData.shader) g.mat.userData.shader.uniforms.uTime.value = t
+    const s = state
+    const onFoot = !!s.walk
+    // zone presence: inside on foot → spawn; left (or back in the air) → remove
+    for (const z of zones) {
+      const d = Math.hypot(s.x - z.x, s.z - z.z)
+      const inside = onFoot && d < ZONE_RADIUS
+      const active = res.active.has(z.id)
+      if (inside && !active) {
+        if (res.gltf) spawn(z)
+        else if (!res.loading)
+          res.loading = new Promise((ok) => gltfLoader(gl).load(URL, (g) => ok((res.gltf = g)))).finally(() => (res.loading = null))
+      } else if (active && (!onFoot || d > ZONE_LEAVE)) despawn(z.id)
+      z.inside = inside
+    }
+    s.zone = zones.find((z) => z.inside)?.name || null
+    let si = 0
     const cam = camera.position
-    // from high up (> 200 m) or far away the animals are below a pixel: skip them
-    const far = Math.hypot(cam.x - res.npcs[0].home[0], cam.z - res.npcs[0].home[1]) > CULL || cam.y - world.heightAt(cam.x, cam.z) > 200
-    for (const g of Object.values(res.groups)) g.meshes.forEach((m) => (m.visible = !far))
-    res.shadows.visible = !far
-    if (far) return
-    const onFoot = !!state.walk && state.walk.mode !== 'look'
-    res.npcs.forEach((n, k) => {
-      if (!n.clip) setClip(n, 'idle', t)
-      n.cool = Math.max(0, n.cool - dt)
-      const pd = Math.hypot(state.x - n.x, state.z - n.z)
-      // discovery: the player walks up to it
-      if (onFoot && pd < REACT_R && n.cool <= 0 && n.mode !== 'react') {
-        n.mode = 'react'
-        n.timer = CLIPS.react
-        n.cool = 8
-        n.heading = Math.atan2(state.x - n.x, state.z - n.z)
-        n.bubble = 2.4
-        setClip(n, 'react', t)
-        if (n.mission) {
-          state.found = state.found || new Set()
-          state.found.add(n.id)
-        }
-      }
-      n.timer -= dt
-      if (n.mode === 'idle' && n.timer <= 0) {
-        // walk to a free spot near home
-        for (let q = 0; q < 6; q++) {
-          const a = rnd() * Math.PI * 2
-          const r = Math.sqrt(rnd()) * n.roam
-          const tx = n.home[0] + Math.cos(a) * r
-          const tz = n.home[1] + Math.sin(a) * r
-          if (!world.blocked(tx, world.heightAt(tx, tz), tz, 0.4, 0.8)) {
-            n.target = [tx, tz]
-            n.mode = 'walk'
-            setClip(n, 'walk', t)
-            break
+    for (const list of res.active.values())
+      for (const n of list) {
+        n.cool = Math.max(0, n.cool - dt)
+        n.timer -= dt
+        const pd = Math.hypot(s.x - n.x, s.z - n.z)
+        if (onFoot && s.walk.mode !== 'look' && pd < REACT_R && n.cool <= 0 && n.mode !== 'react') {
+          n.mode = 'react'
+          n.timer = 1.6
+          n.cool = 8
+          n.heading = Math.atan2(s.x - n.x, s.z - n.z)
+          n.bubble = 2.4
+          play(n, 'react')
+          if (n.mission) {
+            s.found = s.found || new Set()
+            s.found.add(n.id)
           }
         }
-        if (n.mode === 'idle') n.timer = 2
-      } else if (n.mode === 'walk') {
-        const dx = n.target[0] - n.x
-        const dz = n.target[1] - n.z
-        const d = Math.hypot(dx, dz)
-        const want = Math.atan2(dx, dz)
-        let dh = ((want - n.heading + Math.PI * 3) % (Math.PI * 2)) - Math.PI
-        n.heading += THREE.MathUtils.clamp(dh, -2.5 * dt, 2.5 * dt)
-        const step = Math.min(d, n.speed * dt)
-        const nx = n.x + Math.sin(n.heading) * step
-        const nz = n.z + Math.cos(n.heading) * step
-        if (d < 0.3 || world.blocked(nx, world.heightAt(nx, nz), nz, 0.4, 0.8)) {
+        if (n.mode === 'idle' && n.timer <= 0) {
+          n.target = freeSpot(n.zone.x, n.zone.z, ZONE_RADIUS - 6)
+          n.mode = 'walk'
+          play(n, 'walk')
+        } else if (n.mode === 'walk') {
+          const dx = n.target[0] - n.x
+          const dz = n.target[1] - n.z
+          const d = Math.hypot(dx, dz)
+          const want = Math.atan2(dx, dz)
+          const dh = ((want - n.heading + Math.PI * 3) % (Math.PI * 2)) - Math.PI
+          n.heading += THREE.MathUtils.clamp(dh, -2.5 * dt, 2.5 * dt)
+          const step = Math.min(d, n.speed * dt)
+          const nx = n.x + Math.sin(n.heading) * step
+          const nz = n.z + Math.cos(n.heading) * step
+          if (d < 0.3 || world.blocked(nx, world.heightAt(nx, nz), nz, 0.4, 1.4)) {
+            n.mode = 'idle'
+            n.timer = 2 + rnd() * 5
+            play(n, 'idle')
+          } else {
+            n.x = nx
+            n.z = nz
+          }
+        } else if (n.mode === 'react' && n.timer <= 0) {
           n.mode = 'idle'
-          n.timer = 2 + rnd() * 5
-          setClip(n, 'idle', t)
-        } else {
-          n.x = nx
-          n.z = nz
+          n.timer = 1.5 + rnd() * 3
+          play(n, 'idle')
         }
-      } else if (n.mode === 'react' && n.timer <= 0) {
-        n.mode = 'idle'
-        n.timer = 1.5 + rnd() * 3
-        setClip(n, 'idle', t)
+        const y = world.heightAt(n.x, n.z)
+        n.scene.position.set(n.x, y, n.z)
+        n.scene.rotation.y = n.heading
+        n.mixer.update(dt)
+        // level of detail, face (blink, smile while greeting)
+        const near = Math.hypot(cam.x - n.x, cam.y - y, cam.z - n.z) < NEAR
+        for (const m of n.meshes) m.visible = (m.userData.level === 0) === near
+        if (res.clock > n.blinkAt) {
+          n.blinkAt = res.clock + 2.5 + rnd() * 3
+          n.blinkT = res.clock
+        }
+        const bt = (res.clock - (n.blinkT ?? -9)) / 0.16
+        n.smile += ((n.mode === 'react' ? 1 : 0) - n.smile) * Math.min(1, dt * 8)
+        for (const m of n.meshes) {
+          const dct = m.morphTargetDictionary
+          if (!dct) continue
+          m.morphTargetInfluences[dct.blink] = n.smile > 0.5 ? 0 : bt >= 0 && bt < 1 ? Math.sin(bt * Math.PI) : 0
+          m.morphTargetInfluences[dct.smile] = n.smile
+        }
+        // bubble and contact shadow
+        n.bubble = Math.max(0, n.bubble - dt)
+        n.bubbleSprite.visible = n.bubble > 0
+        if (n.bubbleSprite.visible) n.bubbleSprite.position.set(n.x, y + SPECIES[n.id].scale * 1.75 + 0.25 + 0.06 * Math.sin(res.clock * 6), n.z)
+        res.shadows.setMatrixAt(si++, new THREE.Matrix4().compose(new THREE.Vector3(n.x, y + 0.07, n.z), new THREE.Quaternion(), new THREE.Vector3(0.7 * SPECIES[n.id].scale, 1, 0.7 * SPECIES[n.id].scale)))
       }
-      // instance transforms in both levels (the other level gets a zero matrix)
-      const y = world.heightAt(n.x, n.z)
-      o.position.set(n.x, y, n.z)
-      o.rotation.set(0, n.heading, 0)
-      o.scale.setScalar(n.scale)
-      o.updateMatrix()
-      const near = Math.hypot(cam.x - n.x, cam.y - y, cam.z - n.z) < NEAR
-      const g = res.groups[n.group]
-      g.meshes[0].setMatrixAt(n.index, near ? o.matrix : zero)
-      g.meshes[1].setMatrixAt(n.index, near ? zero : o.matrix)
-      // contact shadow (lifted while hopping is not tracked: it stays on the ground)
-      o.position.y = y + 0.07 // above the terrain mesh (log depth: no polygon offset)
-      o.rotation.set(0, n.heading, 0)
-      const sb = SPECIES[n.id].body === 'bird' ? 0.45 : 0.75
-      o.scale.set(n.scale * sb, 1, n.scale * sb * 1.25)
-      o.updateMatrix()
-      res.shadows.setMatrixAt(k, o.matrix)
-      // bubble
-      const b = res.bubbles[k]
-      n.bubble = Math.max(0, (n.bubble || 0) - dt)
-      b.visible = n.bubble > 0
-      if (b.visible) b.position.set(n.x, y + n.scale * 1.15 + 0.25 + 0.06 * Math.sin(t * 6), n.z)
-    })
-    for (const g of Object.values(res.groups)) g.meshes.forEach((m) => (m.instanceMatrix.needsUpdate = true))
+    res.shadows.count = si
+    res.shadows.visible = si > 0
     res.shadows.instanceMatrix.needsUpdate = true
   })
 
   return (
-    <>
-      {Object.values(res.groups).flatMap((g) => g.meshes.map((m, i) => <primitive key={`${g.list[0].id}${i}`} object={m} />))}
+    <group ref={root}>
       <primitive object={res.shadows} />
-      {res.bubbles.map((b, i) => (
-        <primitive key={`b${i}`} object={b} />
-      ))}
-    </>
+    </group>
   )
 }
+
+export { MISSION }

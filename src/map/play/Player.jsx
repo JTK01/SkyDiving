@@ -1,9 +1,9 @@
-import { useEffect, useMemo, useRef } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useFrame, useThree } from '@react-three/fiber'
 import * as THREE from 'three'
-import { buildPlayer, buildCanopy, PLAYER_CLIPS, HIPS } from '../characters/player'
-import { makeClip, skinnedMesh } from '../characters/builder'
+import { buildCanopy, HIPS } from '../characters/player'
 import { plushMaterial } from '../characters/plush'
+import { gltfLoader } from '../world/loaders'
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js'
 import { withAerial } from '../world/aerial'
 import { blobShadow } from './Npcs'
@@ -12,36 +12,20 @@ import { blobShadow } from './Npcs'
  * The player's avatar, driven by the drop state (third-person view):
  *   free fall → 'freefall' · canopy open → 'canopy' (+ the ram-air canopy)
  *   on foot   → 'landing' (after a canopy landing), 'walk' / 'idle', 'photo'
- * Two levels: near (≈ 7 k triangles) within 30 m of the camera, far (≈ 1.4 k)
- * beyond. Hidden in the first-person view.
+ * Rigged glTF (public/models/characters/player.glb, tools/map-data/
+ * build_player.mjs): one continuous skinned body, 19 joints; two meshes
+ * (near within 30 m of the camera, far beyond) share one skeleton and one
+ * AnimationMixer. Hidden in the first-person view.
  */
 const NEAR = 30
-
-function avatar(lod, material) {
-  const built = buildPlayer(lod)
-  const mesh = skinnedMesh(built, material)
-  mesh.castShadow = true
-  mesh.frustumCulled = false
-  const mixer = new THREE.AnimationMixer(mesh)
-  const actions = {}
-  for (const [name, c] of Object.entries(PLAYER_CLIPS)) {
-    const clip = makeClip(name, built.bones, c.pose, c.duration, 30, c.loop !== false)
-    const a = mixer.clipAction(clip)
-    if (c.loop === false) {
-      a.setLoop(THREE.LoopOnce)
-      a.clampWhenFinished = true
-    }
-    actions[name] = a
-  }
-  return { mesh, mixer, actions, tris: built.geometry.attributes.position.count / 3 }
-}
+const URL = `${import.meta.env.BASE_URL || '/'}models/characters/player.glb`
 
 export default function Player({ state }) {
-  const camera = useThree((s) => s.camera)
+  const { camera, gl } = useThree()
   const group = useRef()
+  const [avatar, setAvatar] = useState(null)
   const res = useMemo(() => {
     const material = plushMaterial()
-    const levels = [avatar(0, material), avatar(1, material)]
     // canopy (mesh + suspension lines), attached at the hips
     const c = buildCanopy(0)
     const canopyMat = withAerial(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.75, side: THREE.DoubleSide }))
@@ -56,30 +40,70 @@ export default function Player({ state }) {
     rig.position.y = HIPS
     rig.visible = false
     const shadow = blobShadow(1)
-    return { material, canopyMat, levels, rig, shadow, current: null, last: new THREE.Vector3(), speed: 0 }
+    return { material, canopyMat, rig, shadow, current: null, last: new THREE.Vector3(), speed: 0 }
   }, [])
+
+  useEffect(() => {
+    let live = true
+    gltfLoader(gl).load(URL, (g) => {
+      if (!live) return
+      const meshes = []
+      g.scene.traverse((o) => {
+        if (!o.isSkinnedMesh) return
+        o.material = res.material
+        o.castShadow = true
+        o.frustumCulled = false
+        meshes.push(o)
+      })
+      const lod = (n) => meshes.find((m) => (m.name || m.parent?.name || '').includes(n)) || meshes[0]
+      const mixer = new THREE.AnimationMixer(g.scene)
+      const actions = {}
+      for (const clip of g.animations) {
+        const a = mixer.clipAction(clip)
+        if (clip.name === 'landing') {
+          a.setLoop(THREE.LoopOnce)
+          a.clampWhenFinished = true
+        }
+        actions[clip.name] = a
+      }
+      setAvatar({ scene: g.scene, near: lod('lod0'), far: lod('lod1'), mixer, actions })
+    })
+    return () => {
+      live = false
+    }
+  }, [gl, res])
+
   useEffect(
     () => () => {
-      res.levels.forEach((l) => {
-        l.mixer.stopAllAction()
-        l.mesh.geometry.dispose()
-        l.mesh.skeleton.dispose()
-      })
       res.material.dispose()
       res.canopyMat.dispose()
       res.rig.children.forEach((o) => o.geometry.dispose())
+      res.shadow.geometry.dispose()
+      res.shadow.material.map?.dispose()
+      res.shadow.material.dispose()
     },
     [res],
   )
+  useEffect(
+    () => () => {
+      if (!avatar) return
+      avatar.mixer.stopAllAction()
+      avatar.scene.traverse((o) => {
+        if (o.isSkinnedMesh) {
+          o.geometry.dispose()
+          o.skeleton.dispose()
+        }
+      })
+    },
+    [avatar],
+  )
 
   const play = (name) => {
-    if (res.current === name) return
-    for (const l of res.levels) {
-      const next = l.actions[name]
-      const prev = res.current && l.actions[res.current]
-      next.reset().play()
-      if (prev) prev.crossFadeTo(next, name === 'landing' ? 0.12 : 0.3, false)
-    }
+    if (!avatar || res.current === name) return
+    const next = avatar.actions[name]
+    const prev = res.current && avatar.actions[res.current]
+    next.reset().play()
+    if (prev) prev.crossFadeTo(next, name === 'landing' ? 0.12 : 0.3, false)
     res.current = name
   }
 
@@ -108,14 +132,15 @@ export default function Player({ state }) {
       else if (s.soft && s.walk.t < 1.1) anim = 'landing'
       else anim = res.speed > 0.3 ? 'walk' : 'idle'
     }
-    play(anim)
-    const walk = res.levels.map((l) => l.actions.walk)
-    walk.forEach((a) => (a.timeScale = anim === 'walk' ? Math.max(0.8, res.speed / 1.5) : 1))
-    // level of detail by camera distance; both mixers stay in step
-    const d = camera.position.distanceTo(g.position)
-    res.levels[0].mesh.visible = d < NEAR
-    res.levels[1].mesh.visible = d >= NEAR
-    res.levels.forEach((l) => l.mixer.update(dt))
+    if (avatar) {
+      play(anim)
+      avatar.actions.walk.timeScale = anim === 'walk' ? Math.max(0.8, res.speed / 1.5) : 1
+      // level of detail by camera distance (one skeleton, one mixer)
+      const d = camera.position.distanceTo(g.position)
+      avatar.near.visible = d < NEAR
+      avatar.far.visible = d >= NEAR
+      avatar.mixer.update(dt)
+    }
     // contact shadow on foot (world space: the group is not its parent)
     res.shadow.visible = onFoot && !first
     if (onFoot) {
@@ -126,8 +151,7 @@ export default function Player({ state }) {
     const open = s.canopy ? Math.min(1, s.canopyT ?? 1) : 0
     res.rig.visible = open > 0 && !(onFoot && s.walk.t > 1.5)
     res.rig.scale.set(0.2 + 0.8 * open, 0.3 + 0.7 * open, 0.2 + 0.8 * open)
-    if (onFoot)
-      res.rig.rotation.x = Math.min(1.4, s.walk.t * 1.2) // collapses behind
+    if (onFoot) res.rig.rotation.x = Math.min(1.4, s.walk.t * 1.2) // collapses behind
     else res.rig.rotation.x = 0
   })
 
@@ -135,8 +159,7 @@ export default function Player({ state }) {
     <>
       <primitive object={res.shadow} />
       <group ref={group}>
-        <primitive object={res.levels[0].mesh} />
-        <primitive object={res.levels[1].mesh} />
+        {avatar && <primitive object={avatar.scene} />}
         <primitive object={res.rig} />
       </group>
     </>

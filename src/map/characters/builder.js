@@ -130,63 +130,6 @@ export function skinMatrices(bones, pose, out = bones.map(() => new THREE.Matrix
   return out
 }
 
-/** THREE.AnimationClip from a pose function (bone local tracks, for SkinnedMesh) */
-export function makeClip(name, bones, pose, duration, fps = 30, loop = true) {
-  const n = Math.max(2, Math.round(duration * fps) + (loop ? 1 : 0))
-  const times = new Float32Array(n)
-  const tracks = bones.map(() => ({ q: new Float32Array(n * 4), p: new Float32Array(n * 3) }))
-  for (let k = 0; k < n; k++) {
-    const t = (k / (n - 1)) * duration
-    times[k] = t
-    const P = pose(loop ? t % duration : t, duration)
-    bones.forEach((b, i) => {
-      const tr = P[b.name] || {}
-      _q.setFromEuler(_e.set(...(tr.r || [0, 0, 0]), 'YXZ')).toArray(tracks[i].q, k * 4)
-      const pp = b.parent >= 0 ? bones[b.parent].pivot : new THREE.Vector3()
-      _v.copy(b.pivot).sub(pp)
-      if (tr.p) _v.add(new THREE.Vector3(...tr.p))
-      _v.toArray(tracks[i].p, k * 3)
-    })
-  }
-  const kt = []
-  bones.forEach((b, i) => {
-    kt.push(new THREE.QuaternionKeyframeTrack(`${b.name}.quaternion`, times, tracks[i].q))
-    kt.push(new THREE.VectorKeyframeTrack(`${b.name}.position`, times, tracks[i].p))
-  })
-  return new THREE.AnimationClip(name, duration, kt)
-}
-
-/** THREE.SkinnedMesh from a built character (rigid skinning from aBone) */
-export function skinnedMesh(built, material) {
-  const { geometry, bones } = built
-  const n = geometry.attributes.position.count
-  const si = new Uint16Array(n * 4)
-  const sw = new Float32Array(n * 4)
-  const ab = geometry.attributes.aBone.array
-  for (let k = 0; k < n; k++) {
-    si[k * 4] = ab[k]
-    sw[k * 4] = 1
-  }
-  geometry.setAttribute('skinIndex', new THREE.Uint16BufferAttribute(si, 4))
-  geometry.setAttribute('skinWeight', new THREE.Float32BufferAttribute(sw, 4))
-  const objs = bones.map((b) => {
-    const o = new THREE.Bone()
-    o.name = b.name
-    return o
-  })
-  bones.forEach((b, i) => {
-    const pp = b.parent >= 0 ? bones[b.parent].pivot : new THREE.Vector3()
-    objs[i].position.copy(b.pivot).sub(pp)
-    if (b.parent >= 0) objs[b.parent].add(objs[i])
-  })
-  const mesh = new THREE.SkinnedMesh(geometry, material)
-  const roots = objs.filter((_, i) => bones[i].parent < 0)
-  roots.forEach((r) => mesh.add(r))
-  mesh.updateMatrixWorld(true)
-  mesh.bind(new THREE.Skeleton(objs))
-  return mesh
-}
-
 // small math helpers for pose functions
 export const wave = (t, period, phase = 0) => Math.sin(((t / period) * 2 + phase) * Math.PI)
 export const ease = (x) => (x <= 0 ? 0 : x >= 1 ? 1 : x * x * (3 - 2 * x))

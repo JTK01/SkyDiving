@@ -5,6 +5,7 @@
  *   - continuous body with smooth weights (≤ 4 joints per vertex) + rigid
  *     head / gear parts, vertex colours (COLOR_0)
  *   - animations: idle, walk, freefall, canopy, landing, photo (sampled at 30 fps)
+ *   - morph targets: blink, smile (face parts; driven at runtime)
  *   - meshopt compression via gltfpack
  * usage: node build_player.mjs
  */
@@ -81,8 +82,12 @@ for (const lod of [0, 1]) {
         },
         indices: acc(m.index, 'SCALAR', 1, { target: 34963 }),
         material: 0,
+        // expressions: blink, smile (see characters/face.js)
+        targets: ['blink', 'smile'].map((k) => ({ POSITION: acc(m.morphs[k], 'VEC3', 3, { minmax: bounds(m.morphs[k], 3) }) })),
       },
     ],
+    weights: [0, 0],
+    extras: { targetNames: ['blink', 'smile'] },
   })
   nodes.push({ name: `player_lod${lod}`, mesh: meshes.length - 1, skin: 0 })
   nodes[0].children.push(nodes.length - 1)

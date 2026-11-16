@@ -55,7 +55,15 @@ export default function Player({ state }) {
         o.frustumCulled = false
         meshes.push(o)
       })
-      const lod = (n) => meshes.find((m) => (m.name || m.parent?.name || '').includes(n)) || meshes[0]
+      // the level is in the name of a node above the mesh (three names the meshes mesh_0, mesh_1)
+      const levelOf = (o) => {
+        for (let n = o; n; n = n.parent) {
+          const m = /_lod(\d)/.exec(n.name || '')
+          if (m) return +m[1]
+        }
+        return -1
+      }
+      const lod = (k) => meshes.find((m) => levelOf(m) === k)
       const mixer = new THREE.AnimationMixer(g.scene)
       const actions = {}
       for (const clip of g.animations) {
@@ -66,7 +74,7 @@ export default function Player({ state }) {
         }
         actions[clip.name] = a
       }
-      setAvatar({ scene: g.scene, near: lod('lod0'), far: lod('lod1'), mixer, actions })
+      setAvatar({ scene: g.scene, near: lod(0), far: lod(1), meshes, mixer, actions, blinkAt: 2, blink: 0, smile: 0 })
     })
     return () => {
       live = false
@@ -140,6 +148,24 @@ export default function Player({ state }) {
       avatar.near.visible = d < NEAR
       avatar.far.visible = d >= NEAR
       avatar.mixer.update(dt)
+      // face: random blinks; a smile for the photo pose and after a soft landing
+      const now = performance.now() / 1000
+      if (now > avatar.blinkAt) {
+        avatar.blinkAt = now + 2.5 + Math.random() * 2.5
+        avatar.blinkT = now
+      }
+      const bt = (now - (avatar.blinkT ?? -9)) / 0.16
+      const blink = bt >= 0 && bt < 1 ? Math.sin(bt * Math.PI) : 0
+      const wantSmile = onFoot && (s.photoT > 0 || (s.soft && s.walk.t < 2.5)) ? 1 : 0
+      avatar.smile += (wantSmile - avatar.smile) * Math.min(1, dt * 8)
+      const F = s.debugFace // ?debug captures: { blink, smile } held fixed
+      for (const m of avatar.meshes) {
+        const d = m.morphTargetDictionary
+        if (!d) continue
+        m.morphTargetInfluences[d.blink] = F ? F.blink : wantSmile ? 0 : blink
+        m.morphTargetInfluences[d.smile] = F ? F.smile : avatar.smile
+      }
+      s.expression = { blink, smile: avatar.smile } // ?debug inspection
     }
     // contact shadow on foot (world space: the group is not its parent)
     res.shadow.visible = onFoot && !first

@@ -22,6 +22,8 @@ export class CharacterBuilder {
     this.lod = lod
     this.segScale = segScale
     this.parts = []
+    this.tags = [] // { tag, start, count }: vertex ranges of tagged parts (morph targets)
+    this.vcount = 0
     this.bones = []
     this.boneIndex = new Map()
   }
@@ -39,9 +41,10 @@ export class CharacterBuilder {
 
   /**
    * add a part: geometry in its own frame, placed by pos / rot / scale,
-   * opts: { bone, region (0-3), color (fixed colour), prop (0 = always), detail (skip on lod 1) }
+   * opts: { bone, region (0-3), color (fixed colour), prop (0 = always), detail (skip on lod 1),
+   *         tag (name of the part for morph targets, e.g. 'eyeL', 'mouth') }
    */
-  add(geo, { pos = [0, 0, 0], rot = [0, 0, 0], scale = [1, 1, 1], bone, region = 3, color = '#ffffff', prop = 0, detail = false } = {}) {
+  add(geo, { pos = [0, 0, 0], rot = [0, 0, 0], scale = [1, 1, 1], bone, region = 3, color = '#ffffff', prop = 0, detail = false, tag } = {}) {
     if (detail && this.lod > 0) {
       geo.dispose()
       return this
@@ -60,6 +63,8 @@ export class CharacterBuilder {
     g.setAttribute('aRegion', new THREE.BufferAttribute(new Float32Array(n).fill(region), 1))
     g.setAttribute('aProp', new THREE.BufferAttribute(new Float32Array(n).fill(prop), 1))
     this.parts.push(g)
+    if (tag) this.tags.push({ tag, start: this.vcount, count: n })
+    this.vcount += n
     if (geo !== g) geo.dispose()
     return this
   }
@@ -93,7 +98,7 @@ export class CharacterBuilder {
     const g = mergeGeometries(this.parts, false)
     this.parts.forEach((p) => p.dispose())
     g.computeBoundingSphere()
-    return { geometry: g, bones: this.bones }
+    return { geometry: g, bones: this.bones, tags: this.tags }
   }
 }
 

@@ -1,6 +1,7 @@
 import * as THREE from 'three'
 import { CharacterBuilder, onSurface, wave, ease } from './builder.js'
 import { roundCone, ellipsoid, bodyField, surfaceNets, fieldNormals, partWeights } from './sdf.js'
+import { buildFace, faceMorphs } from './face.js'
 
 /**
  * Rigged player avatar (offline → public/models/characters/player.glb).
@@ -128,15 +129,10 @@ function rigidParts(lod) {
   b.ellipsoid([0.222, 0.1, 0.212], { pos: [0, 1.53, -0.02], bone: 'head', color: '#2c4774' }, 24, 10)
   b.torus(0.205, 0.012, { pos: [0, 1.5, -0.005], rot: [Math.PI / 2 + 0.18, 0, 0], bone: 'head', color: '#2f3237' }, 24, 4)
   for (const s of [-1, 1]) b.ellipsoid([0.055, 0.035, 0.03], { pos: onSurface([0, 1.5, 0], [0.215, 0.13, 0.21], [s * 0.42, 0.75, 1]), rot: [-0.6, s * 0.35, 0], bone: 'head', color: '#5d8fb8' }, 12, 8)
-  for (const s of [-1, 1]) {
-    b.ellipsoid([0.019, 0.028, 0.012], { pos: onSurface(HC, HR, [s * 0.33, 0.03, 1]), rot: [0, s * 0.33, 0], bone: 'head', color: '#141214' }, 10, 8)
-    b.ellipsoid([0.006, 0.008, 0.004], { pos: onSurface(HC, [HR[0] + 0.003, HR[1], HR[2] + 0.003], [s * 0.31, 0.07, 1]), bone: 'head', color: '#ffffff', detail: true }, 6, 4)
-    b.box(0.045, 0.009, 0.01, { pos: onSurface(HC, [HR[0] + 0.002, HR[1], HR[2] + 0.002], [s * 0.34, 0.26, 1]), rot: [-0.25, s * 0.33, s * -0.12], bone: 'head', color: '#2a2224', detail: true })
-    b.ellipsoid([0.032, 0.016, 0.006], { pos: onSurface(HC, [HR[0] + 0.001, HR[1], HR[2] + 0.001], [s * 0.52, -0.2, 1]), rot: [0, s * 0.5, 0], bone: 'head', color: '#f2a29a', detail: true }, 10, 6)
-  }
-  b.torus(0.022, 0.004, { pos: onSurface(HC, [HR[0] + 0.002, HR[1], HR[2] + 0.002], [0, -0.38, 1]), rot: [0.3, 0, Math.PI], bone: 'head', color: '#7a3a34', detail: true }, 10, 3, Math.PI)
+  // face (as before the rigging): dot eyes, highlights, brows, blush, smile — tagged for the morph targets
+  buildFace(b, HC, HR, 'head')
   // collar, harness, container, leg straps, altimeter
-  b.torus(0.07, 0.018, { pos: [0, 1.16, 0.005], rot: [Math.PI / 2, 0, 0], bone: 'chest', color: '#f1ede4' }, 16, 5)
+  b.torus(0.066, 0.02, { pos: [0, 1.205, 0.004], rot: [Math.PI / 2, 0, 0], bone: 'neck', color: '#f1ede4' }, 16, 5)
   for (const s of [-1, 1]) b.box(0.045, 0.3, 0.02, { pos: [s * 0.085, 1.0, 0.15], rot: [0.08, 0, s * 0.08], bone: 'chest', color: '#3c3f45' })
   b.box(0.24, 0.035, 0.02, { pos: [0, 1.04, 0.162], bone: 'chest', color: '#3c3f45' })
   b.box(0.05, 0.045, 0.025, { pos: [0, 1.04, 0.175], bone: 'chest', color: '#9aa0a6', detail: true })
@@ -148,7 +144,7 @@ function rigidParts(lod) {
   const alt = add(ELBOW, DIR, 0.17)
   b.cyl(0.035, 0.035, 0.02, { pos: [alt[0] + 0.045, alt[1] + 0.03, 0.02], rot: [0, 0, Math.PI / 2 - A], bone: 'foreL', color: '#16181b' }, 12)
   b.cyl(0.026, 0.026, 0.004, { pos: [alt[0] + 0.056, alt[1] + 0.038, 0.02], rot: [0, 0, Math.PI / 2 - A], bone: 'foreL', color: '#cfd9a6', detail: true }, 12)
-  return b.build().geometry
+  return b.build()
 }
 
 /**
@@ -174,7 +170,8 @@ export function buildPlayerMesh(lod = 0) {
   }
   const { joints, weights, colors } = partWeights(all, positions)
   // rigid parts (non-indexed) appended
-  const r = rigidParts(lod)
+  const built = rigidParts(lod)
+  const r = built.geometry
   const rp = r.attributes.position.array
   const rn = r.attributes.normal.array
   const rc = r.attributes.color.array
@@ -203,6 +200,8 @@ export function buildPlayerMesh(lod = 0) {
   }
   out.index.set(indices)
   for (let v = 0; v < nr; v++) out.index[indices.length + v] = nb + v
+  // facial expressions as morph targets (rigid face parts follow the head bone)
+  out.morphs = faceMorphs(out.position, built.tags, nb, nb + nr)
   r.dispose()
   return out
 }

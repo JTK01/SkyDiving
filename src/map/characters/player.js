@@ -2,10 +2,11 @@ import * as THREE from 'three'
 
 /**
  * Parachute geometry for the player (the avatar itself is the rigged glTF
- * built from playerRig.js: public/models/characters/player.glb).
- * HIPS: height of the avatar's hips above its feet (body centre in the air).
+ * built by tools/map-data/build_avatar.mjs: public/models/characters/player.glb).
+ * HIPS: height of the avatar's hips above its feet in the free-fall pose
+ * (body centre in the air; the canopy hangs from here).
  */
-export { HIPS } from './playerRig.js'
+export const HIPS = 0.96
 
 /**
  * Ram-air canopy, 9 cells, above the player (root frame, metres): span 7 m,

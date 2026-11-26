@@ -2,30 +2,41 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useFrame, useThree } from '@react-three/fiber'
 import * as THREE from 'three'
 import { buildCanopy, HIPS } from '../characters/player'
-import { plushMaterial } from '../characters/plush'
-import { gltfLoader } from '../world/loaders'
+import { gltfLoader, loadKTX2 } from '../world/loaders'
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js'
 import { withAerial } from '../world/aerial'
 import { blobShadow } from './Npcs'
+import { avatarMaterial } from '../characters/plush'
 
 /**
  * The player's avatar, driven by the drop state (third-person view):
  *   free fall → 'freefall' · canopy open → 'canopy' (+ the ram-air canopy)
- *   on foot   → 'landing' (after a canopy landing), 'walk' / 'idle', 'photo'
- * Rigged glTF (public/models/characters/player.glb, tools/map-data/
- * build_player.mjs): one continuous skinned body, 19 joints; two meshes
- * (near within 30 m of the camera, far beyond) share one skeleton and one
- * AnimationMixer. Hidden in the first-person view.
+ *   on foot   → 'landing' (after a canopy landing), 'idle' / 'walk' / 'run',
+ *               photo poses ('cheer', 'victory', 'stand1', 'stand2'; s.photoPose)
+ * Rigged glTF built from the Tripo + Mixamo source (tools/map-data/
+ * build_avatar.mjs → public/models/characters/player.glb + KTX2 colour and
+ * normal maps): 41 Mixamo bones, two meshes (near within 30 m of the camera,
+ * far beyond) share one skeleton and one AnimationMixer. Full-face helmet,
+ * so no facial expressions. Hidden in the first-person view.
  */
 const NEAR = 30
-const URL = `${import.meta.env.BASE_URL || '/'}models/characters/player.glb`
+const BASE = import.meta.env.BASE_URL || '/'
+const URL = `${BASE}models/characters/player.glb`
+const ONCE = new Set(['landing'])
+
+function setMap(m, key, t) {
+  t.flipY = false
+  t.anisotropy = 4
+  m[key] = t
+  m.needsUpdate = true
+}
 
 export default function Player({ state }) {
   const { camera, gl } = useThree()
   const group = useRef()
   const [avatar, setAvatar] = useState(null)
   const res = useMemo(() => {
-    const material = plushMaterial()
+    const material = avatarMaterial()
     // canopy (mesh + suspension lines), attached at the hips
     const c = buildCanopy(0)
     const canopyMat = withAerial(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.75, side: THREE.DoubleSide }))
@@ -45,6 +56,14 @@ export default function Player({ state }) {
 
   useEffect(() => {
     let live = true
+    loadKTX2(gl, `${BASE}models/characters/player_color.ktx2`).then((t) => {
+      t.colorSpace = THREE.SRGBColorSpace
+      if (live) setMap(res.material, 'map', t)
+    })
+    loadKTX2(gl, `${BASE}models/characters/player_normal.ktx2`).then((t) => {
+      t.colorSpace = THREE.NoColorSpace
+      if (live) setMap(res.material, 'normalMap', t)
+    })
     gltfLoader(gl).load(URL, (g) => {
       if (!live) return
       const meshes = []
@@ -68,13 +87,13 @@ export default function Player({ state }) {
       const actions = {}
       for (const clip of g.animations) {
         const a = mixer.clipAction(clip)
-        if (clip.name === 'landing') {
+        if (ONCE.has(clip.name)) {
           a.setLoop(THREE.LoopOnce)
           a.clampWhenFinished = true
         }
         actions[clip.name] = a
       }
-      setAvatar({ scene: g.scene, near: lod(0), far: lod(1), meshes, mixer, actions, blinkAt: 2, blink: 0, smile: 0 })
+      setAvatar({ scene: g.scene, near: lod(0), far: lod(1), meshes, mixer, actions })
     })
     return () => {
       live = false
@@ -83,6 +102,8 @@ export default function Player({ state }) {
 
   useEffect(
     () => () => {
+      res.material.map?.dispose()
+      res.material.normalMap?.dispose()
       res.material.dispose()
       res.canopyMat.dispose()
       res.rig.children.forEach((o) => o.geometry.dispose())
@@ -136,36 +157,20 @@ export default function Player({ state }) {
     let anim = 'freefall'
     if (s.canopy && !s.ended) anim = 'canopy'
     if (onFoot) {
-      if (s.photoT > 0) anim = 'photo'
+      if (s.photoT > 0 || s.photoPose) anim = s.photoPose || 'cheer'
       else if (s.soft && s.walk.t < 1.1) anim = 'landing'
-      else anim = res.speed > 0.3 ? 'walk' : 'idle'
+      else anim = res.speed > 2.4 ? 'run' : res.speed > 0.3 ? 'walk' : 'idle'
     }
     if (avatar) {
       play(anim)
-      avatar.actions.walk.timeScale = anim === 'walk' ? Math.max(0.8, res.speed / 1.5) : 1
+      // the clips' own speeds: walk ≈ 1.5 m/s, run ≈ 3.8 m/s
+      avatar.actions.walk.timeScale = anim === 'walk' ? THREE.MathUtils.clamp(res.speed / 1.5, 0.7, 1.6) : 1
+      avatar.actions.run.timeScale = anim === 'run' ? THREE.MathUtils.clamp(res.speed / 3.8, 0.7, 1.4) : 1
       // level of detail by camera distance (one skeleton, one mixer)
       const d = camera.position.distanceTo(g.position)
       avatar.near.visible = d < NEAR
       avatar.far.visible = d >= NEAR
       avatar.mixer.update(dt)
-      // face: random blinks; a smile for the photo pose and after a soft landing
-      const now = performance.now() / 1000
-      if (now > avatar.blinkAt) {
-        avatar.blinkAt = now + 2.5 + Math.random() * 2.5
-        avatar.blinkT = now
-      }
-      const bt = (now - (avatar.blinkT ?? -9)) / 0.16
-      const blink = bt >= 0 && bt < 1 ? Math.sin(bt * Math.PI) : 0
-      const wantSmile = onFoot && (s.photoT > 0 || (s.soft && s.walk.t < 2.5)) ? 1 : 0
-      avatar.smile += (wantSmile - avatar.smile) * Math.min(1, dt * 8)
-      const F = s.debugFace // ?debug captures: { blink, smile } held fixed
-      for (const m of avatar.meshes) {
-        const d = m.morphTargetDictionary
-        if (!d) continue
-        m.morphTargetInfluences[d.blink] = F ? F.blink : wantSmile ? 0 : blink
-        m.morphTargetInfluences[d.smile] = F ? F.smile : avatar.smile
-      }
-      s.expression = { blink, smile: avatar.smile } // ?debug inspection
     }
     // contact shadow on foot (world space: the group is not its parent)
     res.shadow.visible = onFoot && !first

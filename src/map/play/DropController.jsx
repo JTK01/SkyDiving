@@ -299,6 +299,12 @@ export default function DropController({ drop, world, state, onEnd, enabled = tr
     if (world) state.agl = state.y - world.heightAt(state.x, state.z)
     const p = sim.prev && alpha < 1 ? sim.prev : null
     camera.position.set(p ? p.x + (state.x - p.x) * alpha : state.x, p ? p.y + (state.y - p.y) * alpha : state.y, p ? p.z + (state.z - p.z) * alpha : state.z)
+    if (state.camOverride && state.frozen) {
+      // ?debug captures in the air (frozen drop)
+      camera.position.set(...state.camOverride.pos)
+      camera.lookAt(...state.camOverride.look)
+      return
+    }
     if (state.view !== 'first') {
       thirdPerson(camera.position.x, camera.position.y + (state.canopy ? 1.5 : 0), camera.position.z, state.canopy ? CAM.canopy : CAM.fall, null)
       return

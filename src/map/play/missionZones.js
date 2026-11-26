@@ -10,8 +10,8 @@
  *   corner crossing to the south-west
  * Each zone holds one mission animal and two general animals.
  */
-export const ZONE_RADIUS = 22 // m: inside = NPCs present
-export const ZONE_LEAVE = 32 // m: NPCs removed beyond this
+export const ZONE_RADIUS = 45 // m: inside = NPCs present
+export const ZONE_LEAVE = 58 // m: NPCs removed beyond this
 
 export const ZONES = [
   { id: 'west', name: '사그라다 파밀리아 광장', at: [-133, 0], mission: 'bull', ambient: ['donkey', 'pigeon'] },

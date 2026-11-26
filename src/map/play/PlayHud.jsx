@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react'
 import Credits from './Credits'
 import { WALK } from './DropController'
-import { MISSION, SPECIES } from '../characters/npcRig'
+import { MISSION, SPECIES } from '../characters/critters'
 import { useQuality, PRESETS, BENCH } from '../quality'
 
 /** 저/중/고 quality switch (auto-picked at first, the choice is remembered) */

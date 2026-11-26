@@ -6,7 +6,7 @@ import { gltfLoader, loadKTX2 } from '../world/loaders'
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js'
 import { withAerial } from '../world/aerial'
 import { blobShadow } from './Npcs'
-import { avatarMaterial } from '../characters/plush'
+import { avatarMaterial } from '../characters/avatarMaterial'
 
 /**
  * The player's avatar, driven by the drop state (third-person view):

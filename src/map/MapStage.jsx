@@ -215,7 +215,7 @@ export default function MapStage({ map, mode, anchor, fromRect, onEntered, onExi
           <ShadowSwitch enabled={playing && preset(quality).shadows > 0} />
           {playing && ready.play && world && !NOCHAR && <Player key={`p${run}`} state={state} />}
           {playing && ready.play && world && zones && <Zones zones={zones} />}
-          {playing && ready.play && world && zones && !NOCHAR && <Npcs world={world} zones={zones} state={state} />}
+          {playing && ready.play && world && zones && !NOCHAR && <Npcs world={world} zones={zones} state={state} data={data} />}
           {playing && <DropController key={run} drop={drop} world={world} state={state} enabled={ready.play && !!world} onEnd={() => setEnded(true)} />}
         </Canvas>
       )}

@@ -5,8 +5,10 @@ import { ZONE_RADIUS } from './missionZones'
 
 /**
  * Glowing markers of the five mission zones, visible from the start of the
- * drop to the landing: a column of light (wider toward the top, so it also
- * reads from straight above) and a pulsing ring + disc on the ground.
+ * drop to the landing: a column of light (wider toward the top) and a halo
+ * that grows with the camera height (so it reads from straight above) —
+ * both gone once the player has landed — and a pulsing ring + disc on the
+ * ground, which stay.
  * Additive, unlit, no fog. A zone the player stands in glows a bit softer.
  */
 const COLUMN_H = 650
@@ -44,7 +46,7 @@ function haloTexture() {
   return new THREE.CanvasTexture(c)
 }
 
-export default function Zones({ zones }) {
+export default function Zones({ zones, state }) {
   const res = useMemo(() => {
     const haloTex = haloTexture()
     // drawn over roofs and trees (it only shows from high up, where it marks the spot like a map pin)
@@ -88,7 +90,10 @@ export default function Zones({ zones }) {
   )
   useFrame(({ clock, camera }) => {
     const t = clock.elapsedTime
+    // after the landing only the glowing rings stay (the columns guide the drop)
+    const landed = !!state?.walk
     for (const r of res.groups) {
+      r.column.visible = r.halo.visible = !landed
       // ≈ 4 % of the view height from above (100 m wide from 1.2 km), the zone size near the ground
       const h = Math.max(0, camera.position.y - r.g.position.y)
       const size = Math.max(ZONE_RADIUS * 2.6, h * 0.085)

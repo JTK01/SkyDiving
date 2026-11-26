@@ -12,7 +12,7 @@ import { avatarMaterial } from '../characters/avatarMaterial'
  * The player's avatar, driven by the drop state (third-person view):
  *   free fall → 'freefall' · canopy open → 'canopy' (+ the ram-air canopy)
  *   on foot   → 'landing' (after a canopy landing), 'idle' / 'walk' / 'run',
- *               photo poses ('cheer', 'victory', 'stand1', 'stand2'; s.photoPose)
+ *               photo poses ('cheer', 'victory', 'stand1', 'stand2', with an animal 'vsign' / 'hug' / 'jump'; s.photoPose, s.photoLift)
  * Rigged glTF built from the Tripo + Mixamo source (tools/map-data/
  * build_avatar.mjs → public/models/characters/player.glb + KTX2 colour and
  * normal maps): 41 Mixamo bones, two meshes (near within 30 m of the camera,
@@ -145,10 +145,10 @@ export default function Player({ state }) {
     // position: hips at the body centre in the air, feet on the surface on foot
     const onFoot = !!s.walk
     const feet = onFoot ? s.walk.feet : s.y - HIPS
-    g.position.set(s.x, feet, s.z)
+    g.position.set(s.x, feet + (onFoot ? s.photoLift || 0 : 0), s.z)
     const moved = Math.hypot(s.x - res.last.x, s.z - res.last.z)
     res.speed = THREE.MathUtils.lerp(res.speed, dt > 0 ? moved / dt : 0, 0.2)
-    if (onFoot && moved > 1e-4) s.face = Math.atan2(s.x - res.last.x, s.z - res.last.z)
+    if (onFoot && moved > 1e-4 && !s.photoPose) s.face = Math.atan2(s.x - res.last.x, s.z - res.last.z) // a photo pose keeps its facing
     res.last.set(s.x, 0, s.z)
     // facing: heading in the air, walking direction on foot (model faces +z)
     const face = onFoot ? (s.face ?? s.yaw + Math.PI) : s.yaw + Math.PI

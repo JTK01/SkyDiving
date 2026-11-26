@@ -12,6 +12,7 @@ import Player from './play/Player'
 import Npcs from './play/Npcs'
 import Zones from './play/Zones'
 import { placeZones } from './play/missionZones'
+const DEBUG_ZONES = typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('debug')
 
 // ?nochar (debug measurements): the world without the avatar and the animals
 const NOCHAR = typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('nochar')
@@ -168,8 +169,23 @@ export default function MapStage({ map, mode, anchor, fromRect, onEntered, onExi
       live = false
     }
   }, [mode, ready.play, manifest, data, map, drop])
-  const zones = useMemo(() => world && placeZones(world, map.world.landmark), [world, map])
-  if (state && typeof window !== 'undefined' && window.__skydive) window.__skydive.drop = { state, data, world, zones }
+  // mission zones: placed once the collision world and the tree positions are in (view rays)
+  const [zones, setZones] = useState(null)
+  useEffect(() => {
+    if (!world) return undefined
+    let live = true
+    data.features().then((f) => {
+      if (!live) return
+      const t0 = performance.now()
+      const z = placeZones(world, map.world.landmark, f.trees, { search: /[?&]zonesearch=photo/.test(window.location.search) ? 'photo' : /[?&]zonesearch/.test(window.location.search) })
+      if (DEBUG_ZONES) console.info('[zones]', Math.round(performance.now() - t0), 'ms', JSON.stringify(z.map((q) => [q.id, q.frame, q.visible, q.faces, q.photoFrame])))
+      setZones(z)
+    })
+    return () => {
+      live = false
+    }
+  }, [world, data, map])
+  if (state && typeof window !== 'undefined' && window.__skydive) window.__skydive.drop = { state, data, world, zones, landmark: map.world.landmark }
   const [ended, setEnded] = useState(false)
   const [run, setRun] = useState(0)
   const [firstFrame, setFirstFrame] = useState(false)
@@ -214,8 +230,8 @@ export default function MapStage({ map, mode, anchor, fromRect, onEntered, onExi
           {mode === 'entering' && ready.preview && <EnterFlight to={dropPose(state)} fov={70} onDone={onEntered} />}
           <ShadowSwitch enabled={playing && preset(quality).shadows > 0} />
           {playing && ready.play && world && !NOCHAR && <Player key={`p${run}`} state={state} />}
-          {playing && ready.play && world && zones && <Zones zones={zones} />}
-          {playing && ready.play && world && zones && !NOCHAR && <Npcs world={world} zones={zones} state={state} data={data} />}
+          {playing && ready.play && world && zones && <Zones zones={zones} state={state} />}
+          {playing && ready.play && world && zones && !NOCHAR && <Npcs world={world} zones={zones} state={state} data={data} landmark={map.world.landmark} />}
           {playing && <DropController key={run} drop={drop} world={world} state={state} enabled={ready.play && !!world} onEnd={() => setEnded(true)} />}
         </Canvas>
       )}

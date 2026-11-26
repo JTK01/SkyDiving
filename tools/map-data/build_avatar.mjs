@@ -7,7 +7,7 @@
  * - mesh + skeleton (41 Mixamo bones) from Idle.fbx; every FBX carries the same rig, so its
  *   clip is used as is: idle, walk, run, freefall, landing, victory, stand1, stand2
  * - canopy (hands up on the toggles) is derived from the standing pose; cheer is the
- *   victory clip held at its peak (photo pose)
+ *   victory clip held at its peak; vsign / hug / jump for photos with an NPC
  * - root motion removed from the walk / run cycles (the game moves the body)
  * - scaled to 1.75 m; LOD0 ≈ 20 k, LOD1 ≈ 4.5 k triangles (meshoptimizer, UV seams kept)
  * - UV v flipped to the glTF convention (KTX2 textures are not flipped at load);
@@ -123,6 +123,43 @@ for (const [name, file] of Object.entries(SOURCES)) {
   mixer.uncacheRoot(root)
   clips.canopy = c
 }
+
+/**
+ * photo poses with an NPC (the NPC stands at the player's left, +x):
+ *   vsign: right hand up beside the head · hug: left arm over the partner's
+ *   shoulder · jump: the airborne first frames of the landing clip
+ */
+function posed(name, aims) {
+  const c = clips.stand1.clone()
+  c.name = name
+  const mixer = new THREE.AnimationMixer(root)
+  mixer.clipAction(clips.stand1).play()
+  mixer.setTime(0)
+  root.updateMatrixWorld(true)
+  for (const [boneName, childName, dir] of aims) {
+    const bone = root.getObjectByName(boneName)
+    const child = root.getObjectByName(childName)
+    root.updateMatrixWorld(true)
+    const cur = child.getWorldPosition(new THREE.Vector3()).sub(bone.getWorldPosition(new THREE.Vector3())).normalize()
+    const delta = new THREE.Quaternion().setFromUnitVectors(cur, new THREE.Vector3(...dir).normalize())
+    const pq = bone.parent.getWorldQuaternion(new THREE.Quaternion())
+    bone.quaternion.premultiply(pq.clone().invert().multiply(delta).multiply(pq))
+    const t = c.tracks.find((k) => k.name === `${boneName}.quaternion`)
+    for (let i = 0; i < t.values.length; i += 4) bone.quaternion.toArray(t.values, i)
+  }
+  mixer.stopAllAction()
+  mixer.uncacheRoot(root)
+  clips[name] = c
+}
+posed('vsign', [
+  ['mixamorigRightArm', 'mixamorigRightForeArm', [-0.62, 0.12, 0.55]],
+  ['mixamorigRightForeArm', 'mixamorigRightHand', [0.2, 0.95, 0.12]],
+])
+posed('hug', [
+  ['mixamorigLeftArm', 'mixamorigLeftForeArm', [0.92, 0.3, -0.05]],
+  ['mixamorigLeftForeArm', 'mixamorigLeftHand', [0.75, -0.62, 0.05]],
+])
+clips.jump = THREE.AnimationUtils.subclip(clips.landing, 'jump', 0, 2, 30)
 
 // cheer: the victory clip held at its peak (fist up, 0.5 s) for photos
 {

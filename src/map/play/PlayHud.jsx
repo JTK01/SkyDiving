@@ -1,8 +1,10 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import Credits from './Credits'
 import { WALK } from './DropController'
 import { MISSION, SPECIES } from '../characters/critters'
 import { useQuality, PRESETS, BENCH } from '../quality'
+import Interact, { InteractPrompt, CollectionPanel } from './Interact'
+import { useCollection } from '../../state/useCollection'
 
 /** 저/중/고 quality switch (auto-picked at first, the choice is remembered) */
 function QualityMenu() {
@@ -76,7 +78,7 @@ function hintText(walk, state) {
   if (!walk) return 'WASD / 방향키 이동 · SPACE 낙하산 · 드래그로 시점 · V 1·3인칭'
   if (walk.mode === 'look') return '성당 위에서는 둘러보기만 할 수 있어요 · 드래그로 시점'
   if (walk.mode === 'roof') return 'WASD 걷기 · Shift 달리기 · P 사진 포즈 · V 1·3인칭 (이 지붕 위에서만)'
-  return `WASD 걷기 · Shift 달리기 · P 사진 포즈 · V 1·3인칭 (착지 지점 반경 ${WALK.radius} m)`
+  return `WASD 걷기 · Shift 달리기 · 동물 곁에서 E · P 사진 포즈 · V 1·3인칭 (착지 지점 반경 ${WALK.radius} m)`
 }
 
 /** what the jumper touched (state.contact from DropController) */
@@ -95,6 +97,10 @@ export default function PlayHud({ map, manifest, state, ended, onRestart, onExit
   const dist = useRef()
   const hint = useRef()
   const found = useRef()
+  const [panel, setPanel] = useState(null)
+  const collected = useCollection((c) => c.found)
+  const foundIds = useRef([])
+  foundIds.current = Object.keys(collected)
   useEffect(() => {
     let id
     const tick = () => {
@@ -105,7 +111,8 @@ export default function PlayHud({ map, manifest, state, ended, onRestart, onExit
         const h = hintText(state.ended ? state.walk : null, state)
         if (hint.current && hint.current.textContent !== h) hint.current.textContent = h
         if (found.current) {
-          const f = state.found ? [...state.found] : []
+          // the collection (identified with 정체 확인하기) is the count
+          const f = foundIds.current
           const txt = (state.zone ? `${state.zone} · ` : '') + `발견한 동물 ${f.length} / ${MISSION.length}` + (f.length ? ` · ${f.map((id) => SPECIES[id].name).join(', ')}` : '')
           if (found.current.textContent !== txt) found.current.textContent = txt
           found.current.hidden = !state.walk
@@ -125,6 +132,9 @@ export default function PlayHud({ map, manifest, state, ended, onRestart, onExit
           <strong>{map.name}</strong>
         </div>
         <div className="play-hud__actions">
+          <button type="button" className="play-hud__toggle" onClick={() => setPanel(panel?.kind === 'collection' ? null : { kind: 'collection' })}>
+            컬렉션 {Object.keys(collected).length}/{MISSION.length}
+          </button>
           <QualityMenu />
           <SwayToggle />
           <button type="button" className="play-hud__exit" onClick={onExit}>
@@ -157,11 +167,14 @@ export default function PlayHud({ map, manifest, state, ended, onRestart, onExit
         </div>
       </dl>
       <p className="play-hud__found" ref={found} hidden />
+      <InteractPrompt state={state} open={!!panel} />
+      <Interact state={state} panel={panel} setPanel={setPanel} />
+      {panel?.kind === 'collection' && <CollectionPanel onClose={() => setPanel(null)} />}
       <p className="play-hud__hint" ref={hint}>{hintText(ended ? state.walk : null, state)}</p>
       <footer className="play-hud__credits">
         <Credits manifest={manifest} />
       </footer>
-      {ended && (
+      {ended && !panel && (
         // not modal: the jumper walks / looks around while it stays on screen
         <div className="play-hud__end" role="status" aria-label="착지">
           <div className="play-hud__end-card">

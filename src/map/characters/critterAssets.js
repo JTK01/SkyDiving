@@ -149,6 +149,9 @@ export function writeCritter(tex, i, n) {
   d.set([n.phase, n.walk, n.wave, n.hop], o + T.motion * 4)
   d.set([n.blink, n.smile, n.headYaw, n.headPitch], o + T.face * 4)
   d[o + T.colB * 4 + 3] = n.lod
+  const P = n.armPose || ZERO
+  d.set(P, o + T.pose * 4)
 }
+const ZERO = [0, 0, 0, 0]
 
 export { variant }

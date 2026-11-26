@@ -2,6 +2,7 @@ import { useEffect } from 'react'
 import { getMap, isPlayable } from '../data/maps'
 import { useAuth } from '../auth/AuthController'
 import { useMapAccess } from '../state/useMapAccess'
+import { useCollection } from '../state/useCollection'
 import { useRouter } from '../router/router'
 import { useMapStage } from '../map/useMapStage'
 
@@ -21,6 +22,10 @@ export default function MapRoute({ id }) {
   useEffect(() => {
     if (user && userId !== user.id) loadFor(user.id)
   }, [user, userId, loadFor])
+  // the player's collection (animals identified, photos with them)
+  useEffect(() => {
+    if (user && useCollection.getState().userId !== user.id) useCollection.getState().loadFor(user.id)
+  }, [user])
 
   const allowed = !!user && isPlayable(map) && userId === user.id && !isLocked(map.id)
   const decided = ready && (!user || userId === user.id)

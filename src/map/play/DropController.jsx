@@ -98,6 +98,7 @@ export default function DropController({ drop, world, state, onEnd, enabled = tr
   const { camera, gl } = useThree()
   const sway = useQuality((q) => q.sway)
   const keys = useRef(new Set()).current
+  const baseFov = useRef(camera.fov)
   const drag = useRef(null)
 
   useEffect(() => {
@@ -197,7 +198,7 @@ export default function DropController({ drop, world, state, onEnd, enabled = tr
 
   const walkStep = (dt) => {
     const w = state.walk
-    if (w.mode === 'look' || state.photoT > 0 || (state.soft && w.t < 1.1)) return
+    if (w.mode === 'look' || state.photoT > 0 || state.ui || (state.soft && w.t < 1.1)) return
     const f = (keys.has('f') ? 1 : 0) - (keys.has('b') ? 1 : 0)
     const s = (keys.has('r') ? 1 : 0) - (keys.has('l') ? 1 : 0)
     if (!f && !s) return
@@ -244,7 +245,16 @@ export default function DropController({ drop, world, state, onEnd, enabled = tr
       walkStep(Math.min(rawDt, 0.1))
       state.y = w.feet + WALK.eye
       state.agl = w.feet - world.heightAt(state.x, state.z)
-      if (state.camOverride) {
+      // photo with an animal (Npcs.setupPhoto): fixed camera and lens
+      const fov = state.photoCam ? state.photoCam.fov : baseFov.current
+      if (camera.fov !== fov) {
+        camera.fov = fov
+        camera.updateProjectionMatrix()
+      }
+      if (state.photoCam) {
+        camera.position.set(...state.photoCam.pos)
+        camera.lookAt(...state.photoCam.look)
+      } else if (state.camOverride) {
         // ?debug captures: a fixed camera { pos: [x, y, z], look: [x, y, z] }
         camera.position.set(...state.camOverride.pos)
         camera.lookAt(...state.camOverride.look)

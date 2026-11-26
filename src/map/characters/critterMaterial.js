@@ -8,7 +8,7 @@ import { AERIAL, AERIAL_GLSL } from '../world/aerial'
  * Per NPC (one row of the data texture uData, see TEXELS): position and
  * heading, walk phase / amount, wave, hop, blink, smile, head turn, fur and
  * garment colours, outfit code, prop mask, level of detail, face layout and
- * the species' joint pivots. Per vertex: bone pair + weight, body zone,
+ * the species' joint pivots, held arm poses (photos). Per vertex: bone pair + weight, body zone,
  * colour code, fixed colour, prop id, face coordinates, fur flag, NPC index.
  *
  * Bones: 0 body · 1 head · 2/3 arms · 4/5 legs · 6 tail · 7/8 ears; ears ride
@@ -19,8 +19,8 @@ import { AERIAL, AERIAL_GLSL } from '../world/aerial'
  * procedurally on the head (eyes with highlights, blink, smile, brows, blush,
  * mouth by style). An inverted-hull pass (outline: true) draws the ink line.
  */
-export const TEXELS = 16
-export const T = { pos: 0, motion: 1, face: 2, colA: 3, colD: 4, colE: 5, colB: 6, colC: 7, layout: 8, layout2: 9, pHead: 10, pArm: 11, pLeg: 12, pTail: 13, pEar: 14, pBody: 15 }
+export const TEXELS = 17
+export const T = { pos: 0, motion: 1, face: 2, colA: 3, colD: 4, colE: 5, colB: 6, colC: 7, layout: 8, layout2: 9, pHead: 10, pArm: 11, pLeg: 12, pTail: 13, pEar: 14, pBody: 15, pose: 16 }
 
 const VERT = /* glsl */ `
   #include <common>
@@ -78,6 +78,7 @@ const VERT = /* glsl */ `
 
   // per-NPC animation inputs (set in main)
   float gT, gPhase, gWalk, gWave, gHop, gYaw, gPitch, gSeed;
+  vec4 gPose; // held arm poses: left up, right up, left out, right out (photos)
   vec3 pHead, pArm, pLeg, pTail, pEar, pBody;
 
   void rot(inout vec3 p, inout vec3 n, vec3 piv, mat3 R) { p = R * (p - piv) + piv; n = R * n; }
@@ -110,6 +111,10 @@ const VERT = /* glsl */ `
       float wave = b == 3 ? gWave : 0.0;
       mat3 R = rotZ(s * (0.06 + 0.04 * sin(gT * 1.2)) * (1.0 - wave)) * rotX(swing);
       if (wave > 0.0) R = rotZ(-2.45 * wave + 0.38 * wave * sin(gT * 10.0)) * rotX(-0.25 * wave) * R;
+      float up = b == 2 ? gPose.x : gPose.y;
+      float spread = b == 2 ? gPose.z : gPose.w;
+      if (up > 0.0) R = rotZ(s * 2.5 * up) * rotX(-0.2 * up) * R;
+      if (spread > 0.0) R = rotZ(s * 1.3 * spread) * rotY(-s * 0.5 * spread) * R;
       rot(p, n, piv, R);
       bodyX(p, n);
     } else if (b == 4 || b == 5) {
@@ -146,6 +151,7 @@ const VERT = /* glsl */ `
     gSeed = C7.w;
     gPhase = M.x; gWalk = M.y; gWave = M.z; gHop = M.w;
     gYaw = E.z; gPitch = E.w;
+    gPose = D(${T.pose}, i);
     pHead = D(${T.pHead}, i).xyz; pArm = D(${T.pArm}, i).xyz; pLeg = D(${T.pLeg}, i).xyz;
     pTail = D(${T.pTail}, i).xyz; pEar = D(${T.pEar}, i).xyz; pBody = D(${T.pBody}, i).xyz;
 

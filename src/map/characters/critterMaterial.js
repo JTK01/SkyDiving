@@ -13,14 +13,15 @@ import { AERIAL, AERIAL_GLSL } from '../world/aerial'
  *
  * Bones: 0 body · 1 head · 2/3 arms · 4/5 legs · 6 tail · 7/8 ears; ears ride
  * on the head, head / arms / tail on the body, legs on the root.
- * Look: banded sun light + sky / ground ambient, a warm rim, fur grain with
- * soft tufts on the silhouette, clothes painted per body zone (2 bits per
- * zone in the outfit code) with a little thickness, the face drawn
- * procedurally on the head (eyes with highlights, blink, smile, brows, blush,
- * mouth by style). An inverted-hull pass (outline: true) draws the ink line.
+ * Look: banded sun light + sky / ground ambient, a warm rim; fur: bump-mapped
+ * strands, soft tufts and lighter tips on the silhouette; clothes (separate
+ * cloth meshes, fur byte 128): softer light, a knit bump, a fabric sheen; the
+ * face drawn procedurally on the head (eyes with highlights and a warm iris,
+ * blink, smile, brows, blush, mouth by style, opening while talking). An
+ * inverted-hull pass (outline: true) draws the ink line.
  */
-export const TEXELS = 17
-export const T = { pos: 0, motion: 1, face: 2, colA: 3, colD: 4, colE: 5, colB: 6, colC: 7, layout: 8, layout2: 9, pHead: 10, pArm: 11, pLeg: 12, pTail: 13, pEar: 14, pBody: 15, pose: 16 }
+export const TEXELS = 18
+export const T = { pos: 0, motion: 1, face: 2, colA: 3, colD: 4, colE: 5, colB: 6, colC: 7, layout: 8, layout2: 9, pHead: 10, pArm: 11, pLeg: 12, pTail: 13, pEar: 14, pBody: 15, pose: 16, extra: 17 }
 
 const VERT = /* glsl */ `
   #include <common>
@@ -44,33 +45,8 @@ const VERT = /* glsl */ `
   varying vec4 vLayout2;
   varying vec4 vExpr;
   varying vec3 vMark;
-  varying vec3 vZi;
-  flat varying vec3 vGB;
-  flat varying vec3 vGC;
-  flat varying float vOutfit;
-  flat varying vec3 vPA;
-  flat varying vec3 vPL;
-  flat varying float vNY;
 
   vec4 D(int k, int i) { return texelFetch(uData, ivec2(k, i), 0); }
-  // body zone from the rest position (left side, |x|) and the bone weights
-  // zi: arm weight, leg weight, unclothed weight (head / ears / tail); pa / pl: shoulder / hip pivots, ny: neck
-  float zoneOf(vec3 p, vec3 zi, vec3 pa, vec3 pl, float ny) {
-    vec3 q = vec3(abs(p.x), p.y, p.z);
-    if (zi.z > 0.5) return 0.0;
-    float span = ny - pl.y;
-    if (zi.x > 0.5) {
-      float t = length(q - pa) / (span * 0.82);
-      return t < 0.5 ? 5.0 : t < 0.8 ? 10.0 : 6.0;
-    }
-    if (zi.y > 0.5) return p.y > pl.y * 0.62 ? 7.0 : p.y > pl.y * 0.27 ? 8.0 : 9.0;
-    if (p.y > ny - span * 0.12) return 1.0;
-    if (q.x < span * 0.16 && p.z > 0.0 && p.y > pl.y + span * 0.22) return 11.0;
-    if (p.y > pl.y + span * 0.55) return 2.0;
-    if (p.y > pl.y + span * 0.18) return 3.0;
-    return 4.0;
-  }
-  float outfitCode(float outfit, float zone) { return mod(floor(outfit / exp2(2.0 * zone)), 4.0); }
 
   mat3 rotX(float a) { float c = cos(a), s = sin(a); return mat3(1.0, 0.0, 0.0, 0.0, c, s, 0.0, -s, c); }
   mat3 rotY(float a) { float c = cos(a), s = sin(a); return mat3(c, 0.0, -s, 0.0, 1.0, 0.0, s, 0.0, c); }
@@ -155,36 +131,22 @@ const VERT = /* glsl */ `
     pHead = D(${T.pHead}, i).xyz; pArm = D(${T.pArm}, i).xyz; pLeg = D(${T.pLeg}, i).xyz;
     pTail = D(${T.pTail}, i).xyz; pEar = D(${T.pEar}, i).xyz; pBody = D(${T.pBody}, i).xyz;
 
-    // colour: fur codes 0–2 (clothed or not: decided per fragment), fixed 3, garments 4 / 5
+    // colour: fur codes 0–2, fixed 3, the NPC's garment colours 4 / 5 (cloth meshes)
     float code = aCode.x;
     vec3 col = code < 0.5 ? C3.rgb : code < 1.5 ? C4.rgb : code < 2.5 ? C5.rgb : code < 3.5 ? srgb(aCol) : code < 4.5 ? C6.rgb : C7.rgb;
-    int ba0 = int(aBone.x + 0.5), bb0 = int(aBone.y + 0.5);
-    float wa = aBone.z / 255.0;
-    float armW = (ba0 == 2 || ba0 == 3 ? wa : 0.0) + (bb0 == 2 || bb0 == 3 ? 1.0 - wa : 0.0);
-    float legW = (ba0 == 4 || ba0 == 5 ? wa : 0.0) + (bb0 == 4 || bb0 == 5 ? 1.0 - wa : 0.0);
-    float bareW = (ba0 == 1 || ba0 >= 6 ? wa : 0.0) + (bb0 == 1 || bb0 >= 6 ? 1.0 - wa : 0.0);
-    vZi = vec3(armW, legW, code > 2.5 ? 1.0 : bareW);
-    vGB = C6.rgb;
-    vGC = C7.rgb;
-    vOutfit = C4.w;
-    vPA = pArm;
-    vPL = pLeg;
-    vNY = pHead.y;
-    float oc = outfitCode(C4.w, zoneOf(position, vZi, pArm, pLeg, pHead.y));
-    vGarment = oc > 0.5 ? 1.0 : 0.0;
     vColor = col;
     vMark = C5.rgb;
-    vFur = aCode.z / 255.0;
+    // fur byte: 255 fur, 128 cloth, 0 other
+    vFur = aCode.z > 200.0 ? 1.0 : 0.0;
+    vGarment = aCode.z > 100.0 && aCode.z < 200.0 ? 1.0 : 0.0;
     vFace = vec3(aFace.xy * 1.27, aFace.z);
     vLayout = D(${T.layout}, i);
     vLayout2 = D(${T.layout2}, i);
-    vExpr = vec4(E.x, E.y, 0.0, 0.0);
+    vExpr = vec4(E.x, E.y, D(${T.extra}, i).x, 0.0);
 
     vec3 p0 = position;
     vec3 n0 = normalize(normal);
     vRest = p0;
-    // clothes sit a little proud of the fur
-    if (vGarment > 0.5) p0 += n0 * 0.006;
     vec3 pa = p0, na = n0, pb = p0, nb = n0;
     int ba = int(aBone.x + 0.5), bb = int(aBone.y + 0.5);
     bone(ba, pa, na);
@@ -232,32 +194,7 @@ const FRAG = /* glsl */ `
   varying vec4 vLayout2;  // blush, brows, light face, mouth y
   varying vec4 vExpr;     // blink, smile
   varying vec3 vMark;
-  varying vec3 vZi;
-  flat varying vec3 vGB;
-  flat varying vec3 vGC;
-  flat varying float vOutfit;
-  flat varying vec3 vPA;
-  flat varying vec3 vPL;
-  flat varying float vNY;
   ${AERIAL_GLSL}
-  // body zone from the rest position (left side, |x|) and the bone weights
-  // zi: arm weight, leg weight, unclothed weight (head / ears / tail); pa / pl: shoulder / hip pivots, ny: neck
-  float zoneOf(vec3 p, vec3 zi, vec3 pa, vec3 pl, float ny) {
-    vec3 q = vec3(abs(p.x), p.y, p.z);
-    if (zi.z > 0.5) return 0.0;
-    float span = ny - pl.y;
-    if (zi.x > 0.5) {
-      float t = length(q - pa) / (span * 0.82);
-      return t < 0.5 ? 5.0 : t < 0.8 ? 10.0 : 6.0;
-    }
-    if (zi.y > 0.5) return p.y > pl.y * 0.62 ? 7.0 : p.y > pl.y * 0.27 ? 8.0 : 9.0;
-    if (p.y > ny - span * 0.12) return 1.0;
-    if (q.x < span * 0.16 && p.z > 0.0 && p.y > pl.y + span * 0.22) return 11.0;
-    if (p.y > pl.y + span * 0.55) return 2.0;
-    if (p.y > pl.y + span * 0.18) return 3.0;
-    return 4.0;
-  }
-  float outfitCode(float outfit, float zone) { return mod(floor(outfit / exp2(2.0 * zone)), 4.0); }
 
 
   float hash(vec3 p) { p = fract(p * 0.1031); p += dot(p, p.yzx + 33.33); return fract((p.x + p.y) * p.z); }
@@ -280,7 +217,7 @@ const FRAG = /* glsl */ `
     vec2 f = vFace.xy;
     f.x = abs(f.x); // symmetric features
     float ex = vLayout.x, ey = vLayout.y, es = vLayout.z, style = vLayout.w;
-    float blink = vExpr.x, smile = vExpr.y;
+    float blink = vExpr.x, smile = vExpr.y, talk = vExpr.z;
     vec3 ink = vLayout2.z > 0.5 ? vec3(0.06, 0.05, 0.05) : vec3(0.075, 0.055, 0.05);
     // blush
     float bl = 1.0 - smoothstep(0.0, 0.11, length((f - vec2(ex + 0.06, ey - 0.27)) / vec2(1.0, 0.62)));
@@ -296,14 +233,23 @@ const FRAG = /* glsl */ `
       col = mix(col, vec3(1.0), hl * 0.95);
       float hl2 = aa(ellipseD(f, vec2(ex + 0.03 * es, ey - 0.055 * es), vec2(0.016, 0.016) * es)) * step(0.5, h);
       col = mix(col, vec3(1.0), hl2 * 0.8);
+      // a warm iris glow at the bottom of the eye
+      float iris = aa(ellipseD(f, vec2(ex, ey - er.y * 0.45 * h), vec2(er.x * 0.62, er.y * 0.35 * h))) * e;
+      col = mix(col, vec3(0.32, 0.17, 0.08), iris * 0.55);
     } else {
       float d = arcD(f, vec2(ex, ey - 0.03), er.x * 0.95, 0.35, 2.8);
       col = mix(col, ink, aa(d - 0.016));
     }
-    // brows
-    if (vLayout2.y > 0.5) col = mix(col, ink, aa(segD(f, vec2(ex - 0.07, ey + 0.17), vec2(ex + 0.06, ey + 0.13)) - 0.016));
-    // mouth
+    // brows: short soft arcs (strong for brow-y species), lifted a little by a smile
+    float bw = vLayout2.y > 0.5 ? 0.017 : 0.011;
+    float by = ey + er.y + 0.06 + 0.02 * smile;
+    col = mix(col, mix(col, ink, vLayout2.y > 0.5 ? 1.0 : 0.55), aa(arcD(f, vec2(ex, by - 0.08), 0.09, 1.05, 2.1) - bw));
+    // mouth (opens while talking)
     float my = vLayout2.w;
+    if (talk > 0.05 && style < 2.5) {
+      float o = aa(ellipseD(f, vec2(0.0, my - 0.035), vec2(0.055, 0.045 * talk)));
+      col = mix(col, vec3(0.55, 0.16, 0.18), o);
+    }
     if (style < 0.5) {
       // ω
       float d = min(arcD(f, vec2(0.06, my), 0.06, 3.3, 6.1), 9.0);
@@ -340,30 +286,44 @@ const FRAG = /* glsl */ `
       return;
     }
     vec3 base = vColor;
-    // clothes: per fragment from the rest position → clean hems
-    float oc = outfitCode(vOutfit, zoneOf(vRest, vZi, vPA, vPL, vNY));
-    bool cloth = oc > 0.5;
-    if (cloth) base = oc < 1.5 ? vGB : oc < 2.5 ? vGC : vec3(0.84, 0.8, 0.72);
-    // fur: fine strands + soft tufts on the silhouette; clothes: a knit
+    bool cloth = vGarment > 0.5;
     float near = 1.0 - smoothstep(6.0, 18.0, length(cameraPosition - vW));
-    if (vFur > 0.5 && !cloth) {
-      float s = vnoise(vRest * vec3(260.0, 70.0, 260.0));
-      float s2 = vnoise(vRest * vec3(90.0, 25.0, 90.0) + 7.0);
-      base *= 0.9 + 0.12 * s + 0.06 * s2;
+    float h = 0.0; // bump height (fur strands / cloth weave), metres
+    if (vFur > 0.5) {
+      // fur: strands along the body (stretched noise), tufts on the silhouette, lighter tips
+      float s = vnoise(vRest * vec3(300.0, 80.0, 300.0));
+      float s2 = vnoise(vRest * vec3(95.0, 28.0, 95.0) + 7.0);
+      base *= 0.88 + 0.14 * s + 0.07 * s2;
+      h = (s * 0.7 + s2 * 0.3) * 0.0016 * near;
       float edge = smoothstep(0.32, 0.04, abs(ndv));
-      if (near > 0.0 && s * 0.8 + s2 * 0.4 < edge * 0.75 * near) discard;
+      if (near > 0.0 && s * 0.8 + s2 * 0.4 < edge * 0.8 * near) discard;
+      base = mix(base, base * 1.18 + 0.03, edge * 0.5); // backlit tips
     } else if (cloth) {
-      float k = 0.5 + 0.5 * sin(vRest.y * 900.0) * sin(vRest.x * 420.0 + vRest.z * 420.0);
-      base *= 0.95 + 0.07 * k * near;
+      // cloth: a fine knit (two crossed ridges) + darker creases from the folds
+      float k = 0.5 + 0.5 * sin(vRest.y * 1100.0 + sin(vRest.x * 260.0) * 2.0);
+      float k2 = 0.5 + 0.5 * sin((vRest.x + vRest.z) * 700.0);
+      base *= 0.92 + 0.06 * k * near + 0.03 * k2 * near;
+      h = (k * 0.6 + k2 * 0.4) * 0.0006 * near;
     }
-    if (vFace.z > 0.5 && !cloth) base = drawFace(base);
+    if (h > 0.0) {
+      // bump: perturb the normal by the height's screen-space gradient
+      vec3 dpx = dFdx(vW), dpy = dFdy(vW);
+      float dhx = dFdx(h), dhy = dFdy(h);
+      vec3 r1 = cross(dpy, N), r2 = cross(N, dpx);
+      float det = dot(dpx, r1);
+      vec3 grad = sign(det) * (dhx * r1 + dhy * r2);
+      N = normalize(abs(det) * N - grad);
+    }
+    if (vFace.z > 0.5) base = drawFace(base);
     // light: banded sun + sky / ground ambient + warm rim
     float ndl = dot(N, uSunDir);
     float band = smoothstep(-0.12, 0.08, ndl) * 0.62 + smoothstep(0.25, 0.55, ndl) * 0.38;
     vec3 amb = mix(uGround, uSky, N.y * 0.5 + 0.5);
     vec3 light = amb + uSunCol * band;
     float rim = pow(1.0 - max(ndv, 0.0), 3.0);
-    vec3 c = base * light + base * rim * 0.35 * vec3(1.0, 0.92, 0.8);
+    if (cloth) light = amb * 1.05 + uSunCol * (smoothstep(-0.25, 0.2, ndl) * 0.55 + smoothstep(0.2, 0.6, ndl) * 0.35);
+    vec3 c = base * light + base * rim * (cloth ? 0.18 : 0.4) * vec3(1.0, 0.92, 0.8);
+    if (cloth) c += vec3(0.05, 0.048, 0.045) * pow(1.0 - max(ndv, 0.0), 2.0) * band; // fabric sheen
     // a soft darker edge (like the ink line, inside the silhouette)
     c *= 1.0 - 0.18 * smoothstep(0.3, 0.0, ndv);
     gl_FragColor = vec4(aerialPerspective(c, vW), 1.0);

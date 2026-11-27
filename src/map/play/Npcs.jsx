@@ -15,7 +15,7 @@ import { LINES } from '../characters/critterInfo'
  *
  * A zone's NPCs exist only while the player is on foot inside it (landed in
  * it or walked in): created on entry, removed on leaving; critters.bin is
- * fetched on the first entry. All NPCs of a zone are one merged mesh per
+ * fetched on the first entry. All NPCs of a zone (bodies + clothes) are one merged mesh per
  * level of detail (near < 25 m / far), animated in the vertex shader from a
  * small data texture — 4 draw calls per zone (2 levels + their ink lines).
  *
@@ -189,8 +189,7 @@ export default function Npcs({ world, zones, state, data, landmark }) {
   /** build the GPU side of a set of NPCs */
   const mount = (key, npcs, zone) => {
     const tex = critterRows(res.assets, npcs)
-    const ids = npcs.map((n) => n.id)
-    const geos = [mergeCritters(res.assets, ids, 0), mergeCritters(res.assets, ids, 1)]
+    const geos = [mergeCritters(res.assets, npcs, 0), mergeCritters(res.assets, npcs, 1)]
     const mats = []
     const meshes = []
     for (const lod of [0, 1])
@@ -255,7 +254,7 @@ export default function Npcs({ world, zones, state, data, landmark }) {
           despawn(key)
           const npcs = list.map((o, k) => {
             const rand = rng(o.seed ?? k + 1)
-            return makeNpc(o.id, o.x, o.z, k * 7.3, rand, { heading: o.heading ?? 0, mode: 'pose', timer: 1e9, wave: o.wave || 0, smile: o.smile || 0, pose: true, armPose: o.armPose || null, hop: o.hop || 0 })
+            return makeNpc(o.id, o.x, o.z, k * 7.3, rand, { heading: o.heading ?? 0, mode: o.walk ? 'walk' : 'pose', timer: 1e9, wave: o.wave || 0, smile: o.smile || 0, pose: true, armPose: o.armPose || null, hop: o.hop || 0 })
           })
           mount(key, npcs, { x: list[0]?.x ?? 0, z: list[0]?.z ?? 0, debug: true })
           return npcs.length
@@ -528,6 +527,7 @@ export default function Npcs({ world, zones, state, data, landmark }) {
         // greeting: wave + small hop + smile; head follows the player nearby
         const react = n.mode === 'react'
         n.talkT = Math.max(0, (n.talkT || 0) - dt)
+        n.talk = n.talkT > 0 ? 0.5 + 0.5 * Math.sin(n.talkT * 14) : 0
         if (n.held) {
           // talking / posing: smile, a little bounce while speaking
           n.hop = (n.photoHop || 0) + (n.talkT > 0 ? Math.abs(Math.sin(n.talkT * 9)) * 0.025 : 0)

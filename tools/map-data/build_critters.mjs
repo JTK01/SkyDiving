@@ -4,10 +4,11 @@
  *   (≈ 4.2 k / 1.1 k triangles + props) built by critterMesh.mjs.
  * File: 'CRIT' · u32 header length · JSON header · meshopt-encoded buffers.
  *   header.species[id] = { height, pivots, head, lods: [{ vertices, indices,
- *   vb: [offset, length], ib: [offset, length] }] }, header.posScale
+ *   vb: [offset, length], ib: [offset, length] }], garments: { outfit: [lod0, lod1] } },
+ *   header.posScale
  * Vertex (24 bytes): i16×3 position (× posScale m) · i8×3 normal · u8 colour code ·
  *   u8 bone a, bone b, weight a (/255), zone · u8×3 fixed colour · u8 prop ·
- *   i8 face x, face y (/100), face flag (127) · u8 fur flag · 2 pad.
+ *   i8 face x, face y (/100), face flag (127) · u8 fur (255) / cloth (128) flag · 2 pad.
  * usage: node build_critters.mjs [speciesId …]   (all by default)
  */
 import fs from 'node:fs'
@@ -42,7 +43,7 @@ for (const id of ids) {
   const k = height / TOP
   const sc = (v) => v.map((x) => +(x * k).toFixed(4))
   const entry = { height: +height.toFixed(3), scale: +k.toFixed(5), pivots: Object.fromEntries(Object.entries(B.pivots).map(([n, v]) => [n, sc(v)])), head: { c: sc(B.head.c), r: sc(B.head.r) }, lods: [] }
-  for (const L of B.lods) {
+  const encode = (L) => {
     const n = L.positions.length / 3
     const vb = new ArrayBuffer(n * 24)
     const dv = new DataView(vb)
@@ -60,10 +61,12 @@ for (const id of ids) {
     const idx = Uint16Array.from(L.index)
     const evb = MeshoptEncoder.encodeVertexBuffer(new Uint8Array(vb), n, 24)
     const eib = MeshoptEncoder.encodeIndexBuffer(new Uint8Array(idx.buffer), idx.length, 2)
-    entry.lods.push({ vertices: n, indices: idx.length, vb: put(evb), ib: put(eib) })
+    return { vertices: n, indices: idx.length, vb: put(evb), ib: put(eib) }
   }
+  for (const L of B.lods) entry.lods.push(encode(L))
+  entry.garments = Object.fromEntries(Object.entries(B.garments).map(([k, lods]) => [k, lods.map(encode)]))
   header.species[id] = entry
-  stats.push([id, entry.lods.map((l) => l.indices / 3), ((Date.now() - t0) / 1000).toFixed(1) + 's'])
+  stats.push([id, entry.lods.map((l) => l.indices / 3), Object.fromEntries(Object.entries(entry.garments).map(([k, g]) => [k, g.map((l) => l.indices / 3)])), ((Date.now() - t0) / 1000).toFixed(1) + 's'])
   console.log(JSON.stringify(stats.at(-1)))
 }
 const json = Buffer.from(JSON.stringify(header))

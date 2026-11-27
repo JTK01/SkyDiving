@@ -21,16 +21,18 @@ export function loadCritters() {
     const header = JSON.parse(new TextDecoder().decode(new Uint8Array(buf, 8, hl)))
     const base = 8 + hl + ((4 - (hl % 4)) % 4)
     const out = { posScale: header.posScale, species: {} }
+    const decode = (l) => {
+      const vb = new Uint8Array(l.vertices * 24)
+      MeshoptDecoder.decodeVertexBuffer(vb, l.vertices, 24, new Uint8Array(buf, base + l.vb[0], l.vb[1]))
+      const ib = new Uint16Array(l.indices)
+      MeshoptDecoder.decodeIndexBuffer(new Uint8Array(ib.buffer), l.indices, 2, new Uint8Array(buf, base + l.ib[0], l.ib[1]))
+      return { n: l.vertices, vb, ib }
+    }
     for (const [id, e] of Object.entries(header.species)) {
       out.species[id] = {
         ...e,
-        lods: e.lods.map((l) => {
-          const vb = new Uint8Array(l.vertices * 24)
-          MeshoptDecoder.decodeVertexBuffer(vb, l.vertices, 24, new Uint8Array(buf, base + l.vb[0], l.vb[1]))
-          const ib = new Uint16Array(l.indices)
-          MeshoptDecoder.decodeIndexBuffer(new Uint8Array(ib.buffer), l.indices, 2, new Uint8Array(buf, base + l.ib[0], l.ib[1]))
-          return { n: l.vertices, vb, ib }
-        }),
+        lods: e.lods.map(decode),
+        garments: Object.fromEntries(Object.entries(e.garments || {}).map(([k, g]) => [k, g.map(decode)])),
       }
     }
     return out
@@ -39,9 +41,20 @@ export function loadCritters() {
   return pending
 }
 
-/** merged geometry of the NPCs (list of species ids) at one level */
-export function mergeCritters(assets, ids, lod) {
-  const parts = ids.map((id) => assets.species[id].lods[lod])
+/** merged geometry of the NPCs ([{ id, look: { outfit } }]) at one level: body + the outfit's clothes */
+export function mergeCritters(assets, npcs, lod) {
+  const parts = []
+  const owner = []
+  npcs.forEach((n, k) => {
+    const A = assets.species[n.id]
+    parts.push(A.lods[lod])
+    owner.push(k)
+    const g = A.garments?.[n.look.outfit]
+    if (g) {
+      parts.push(g[lod])
+      owner.push(k)
+    }
+  })
   const nv = parts.reduce((s, p) => s + p.n, 0)
   const ni = parts.reduce((s, p) => s + p.ib.length, 0)
   const pos = new Float32Array(nv * 3)
@@ -73,7 +86,7 @@ export function mergeCritters(assets, ids, lod) {
       code[w * 4] = p.vb[o + 9]
       code[w * 4 + 1] = p.vb[o + 17]
       code[w * 4 + 2] = p.vb[o + 21]
-      code[w * 4 + 3] = k
+      code[w * 4 + 3] = owner[k]
       col[w * 3] = p.vb[o + 14]
       col[w * 3 + 1] = p.vb[o + 15]
       col[w * 3 + 2] = p.vb[o + 16]
@@ -151,6 +164,7 @@ export function writeCritter(tex, i, n) {
   d[o + T.colB * 4 + 3] = n.lod
   const P = n.armPose || ZERO
   d.set(P, o + T.pose * 4)
+  d[o + T.extra * 4] = n.talk || 0
 }
 const ZERO = [0, 0, 0, 0]
 

@@ -10,6 +10,7 @@
 import { MeshoptSimplifier } from 'meshoptimizer'
 import { roundCone, ellipsoid, smin, surfaceNets } from '../../src/map/characters/sdf.js'
 import { SPECIES, BONE, ZONE, PROP, PIVOTS, TOP } from '../../src/map/characters/critters.js'
+import { garmentPieces, GARMENT_BOX } from './garments.mjs'
 
 const MAIN = 0
 const LIGHT = 1
@@ -128,16 +129,16 @@ export function speciesParts(S) {
 
   // ---- torso, neck, head
   const belly = build === 'round' ? 1.1 : 1
-  P(ellipsoid([0, 0.335, 0.0], [0.16 * W * belly, 0.155, 0.14 * W * belly]), { bone: BONE.body, zone: torsoZone, code: bodyCode, blend: 0.05 })
-  P(roundCone([0, 0.31, -0.005], [0, 0.5, -0.01], 0.15 * W, 0.105), { bone: BONE.body, zone: torsoZone, code: bodyCode, blend: 0.05 })
-  P(roundCone([0, 0.5, -0.01], [0, 0.6, 0.0], 0.09, 0.085), { bone: BONE.head, zone: ZONE.neck, code: bodyCode, blend: 0.06 })
+  P(ellipsoid([0, 0.335, 0.0], [0.16 * W * belly, 0.155, 0.14 * W * belly]), { bone: BONE.body, zone: torsoZone, code: bodyCode, blend: 0.05, tag: 'torso' })
+  P(roundCone([0, 0.31, -0.005], [0, 0.5, -0.01], 0.15 * W, 0.105), { bone: BONE.body, zone: torsoZone, code: bodyCode, blend: 0.05, tag: 'torso' })
+  P(roundCone([0, 0.5, -0.01], [0, 0.6, 0.0], 0.09, 0.085), { bone: BONE.head, zone: ZONE.neck, code: bodyCode, blend: 0.06, tag: 'neck' })
   const wool = extras.has('wool')
   const headF = ellipsoid(HC, HR)
   P(wool ? (p) => headF(p) - (p[1] > HC[1] + 0.06 || p[2] < HC[2] - 0.05 ? 0.012 * (0.5 + 0.5 * Math.sin(p[0] * 90) * Math.sin(p[1] * 90) * Math.sin(p[2] * 90)) : 0) : headF, { bone: BONE.head, zone: ZONE.head, code: headCode, blend: 0.06 })
   if (wool) {
     // fleece: a bumpy coat over the torso
     const coat = ellipsoid([0, 0.37, -0.005], [0.18 * W, 0.19, 0.16 * W])
-    P((p) => coat(p) - 0.014 * (0.5 + 0.5 * Math.sin(p[0] * 80) * Math.sin(p[1] * 80) * Math.sin(p[2] * 80)), { bone: BONE.body, zone: torsoZone, code: MAIN, blend: 0.04 })
+    P((p) => coat(p) - 0.014 * (0.5 + 0.5 * Math.sin(p[0] * 80) * Math.sin(p[1] * 80) * Math.sin(p[2] * 80)), { bone: BONE.body, zone: torsoZone, code: MAIN, blend: 0.04, tag: 'torso' })
   }
 
   // ---- muzzle / beak (head bone)
@@ -380,8 +381,9 @@ export function speciesParts(S) {
     armParts.push([ellipsoid(add(hand, [0.008, -0.022, 0.004]), [0.046, 0.05, 0.044]), ZONE.hand, (p) => (marks.has('socks') ? MARK : limbCode(p))])
   }
   for (const [f, zone, code] of armParts) {
-    P(f, { bone: BONE.armL, zone, code, blend: 0.03 })
-    P((p) => f(mirror(p)), { bone: BONE.armR, zone, code: typeof code === 'function' ? (p) => code(mirror(p)) : code, blend: 0.03 })
+    const tag = zone === ZONE.hand ? 'hand' : 'arm'
+    P(f, { bone: BONE.armL, zone, code, blend: 0.03, tag })
+    P((p) => f(mirror(p)), { bone: BONE.armR, zone, code: typeof code === 'function' ? (p) => code(mirror(p)) : code, blend: 0.03, tag })
   }
 
   // ---- legs (left; mirrored): thigh, shin, foot (paw / hoof / bird foot)
@@ -401,8 +403,9 @@ export function speciesParts(S) {
     else legParts.push([ellipsoid([ankle[0] + 0.004, 0.034, 0.03], [0.058, 0.036, 0.078]), ZONE.foot, (p) => (marks.has('socks') ? MARK : limbCode(p))])
   }
   for (const [f, zone, code, color] of legParts) {
-    P(f, { bone: BONE.legL, zone, code, color, fur: code === FIXED ? 0 : 1, blend: zone === ZONE.thigh ? 0.035 : 0.025 })
-    P((p) => f(mirror(p)), { bone: BONE.legR, zone, code: typeof code === 'function' ? (p) => code(mirror(p)) : code, color, fur: code === FIXED ? 0 : 1, blend: zone === ZONE.thigh ? 0.035 : 0.025 })
+    const tag = zone === ZONE.foot ? 'foot' : 'leg'
+    P(f, { bone: BONE.legL, zone, code, color, fur: code === FIXED ? 0 : 1, blend: zone === ZONE.thigh ? 0.035 : 0.025, tag })
+    P((p) => f(mirror(p)), { bone: BONE.legR, zone, code: typeof code === 'function' ? (p) => code(mirror(p)) : code, color, fur: code === FIXED ? 0 : 1, blend: zone === ZONE.thigh ? 0.035 : 0.025, tag })
   }
 
   // ---- tail (bone tail, pivot at its root)
@@ -521,6 +524,7 @@ export function speciesParts(S) {
     props,
     head: { c: HC, r: HR },
     pivots: { body: PIVOTS.body, head: PIVOTS.head, armL: [sh[0], sh[1], sh[2]], legL: hip, tail: tailPivot, earL: earPivot },
+    axes: { sh, hand, hip, ankle, W, bird: !!S.bird },
   }
 }
 
@@ -638,6 +642,72 @@ function attributes(parts, field, head, P, normalsOut) {
 }
 
 /**
+ * garment vertices: normal from the garment's own field, bones from the body point
+ * under the cloth (so cloth and body bend together), colour from the piece; the
+ * fur byte is 128 (= cloth) for the shader
+ */
+function garmentAttributes(bodyParts, field, piece, P, normalsOut) {
+  const n = P.length / 3
+  const A = { bone: new Uint8Array(n * 4), code: new Uint8Array(n * 4), color: new Uint8Array(n * 4), face: new Int8Array(n * 4) }
+  const e = 0.002
+  const col = piece.color ? hex(piece.color) : [255, 255, 255]
+  for (let v = 0; v < n; v++) {
+    const p = [P[v * 3], P[v * 3 + 1], P[v * 3 + 2]]
+    const g = [0, 1, 2].map((k) => {
+      const a = [...p]
+      const b = [...p]
+      a[k] += e
+      b[k] -= e
+      return field(a) - field(b)
+    })
+    const nrm = mul(g, 1 / (len(g) || 1))
+    normalsOut.set(nrm, v * 3)
+    const q = sub(p, mul(nrm, 0.02))
+    const byBone = new Map()
+    for (const part of bodyParts) {
+      if (len(sub(q, part.bc)) - part.br > 0.08) continue
+      const d = part.f(q)
+      if (!byBone.has(part.bone) || d < byBone.get(part.bone)) byBone.set(part.bone, d)
+    }
+    const ranked = [...byBone.entries()].sort((a, b) => a[1] - b[1])
+    const [b0, d0] = ranked[0] || [BONE.body, 0]
+    const [b1, d1] = ranked[1] || [b0, Infinity]
+    const w1 = Math.exp(-(d1 - d0) / 0.012)
+    if (piece.rigid) A.bone.set([BONE.body, BONE.body, 255, 0], v * 4)
+    else A.bone.set([b0, b1, Math.round((1 / (1 + w1)) * 255), 0], v * 4)
+    A.color.set([...col, 255], v * 4)
+    A.code.set([piece.code, 0, 128, 0], v * 4)
+  }
+  return A
+}
+
+/** assemble simplified pieces → one indexed mesh with the per-vertex attributes */
+function assemble(pieces) {
+  const nv = pieces.reduce((s, p) => s + p.verts.length / 3, 0)
+  const ni = pieces.reduce((s, p) => s + p.tri.length, 0)
+  const positions = new Float32Array(nv * 3)
+  const normals = new Float32Array(nv * 3)
+  const out = { bone: new Uint8Array(nv * 4), code: new Uint8Array(nv * 4), color: new Uint8Array(nv * 4), face: new Int8Array(nv * 4) }
+  const index = new Uint32Array(ni)
+  let vo = 0
+  let io = 0
+  for (const pc of pieces) {
+    const m = pc.verts.length / 3
+    positions.set(pc.verts, vo * 3)
+    normals.set(pc.N, vo * 3)
+    for (const k of Object.keys(out)) out[k].set(pc.A[k], vo * 4)
+    for (let i = 0; i < pc.tri.length; i += 3) {
+      index[io + i] = pc.tri[i] + vo
+      index[io + i + 1] = pc.tri[i + 2] + vo
+      index[io + i + 2] = pc.tri[i + 1] + vo
+    }
+    vo += m
+    io += pc.tri.length
+  }
+  return { positions, normals, ...out, index }
+}
+
+/**
  * one species → { lods: [{ positions, normals, bone, code, color, face, index }], pivots, head }
  * targets: triangles per level (body; props get a share on top)
  */
@@ -695,5 +765,29 @@ export async function buildSpecies(S, { targets = [4200, 1100], cell = 0.0075 } 
     }
     return { positions, normals, ...out, index }
   })
-  return { lods, pivots: B.pivots, head: B.head, top: TOP }
+  // clothes: every outfit the species may wear, each piece meshed and simplified on its own
+  const bodyParts = parts.filter((q) => ['torso', 'neck', 'arm', 'hand', 'leg', 'foot'].includes(q.tag))
+  const garments = {}
+  for (const [name, list] of Object.entries(garmentPieces(S, { ...B, parts }))) {
+    const built = list.map((pc) => {
+      const { positions, indices } = surfaceNets(pc.f, GARMENT_BOX[0], GARMENT_BOX[1], cell * 0.85)
+      return { pc, positions, indices }
+    })
+    garments[name] = targets.map((_, li) =>
+      assemble(
+        built
+          .filter((b) => b.indices.length)
+          .map(({ pc, positions, indices }) => {
+            const full = indices.length / 3
+            const sel = simplify(positions, indices, li ? Math.min(full, 260) : Math.min(full, 950), li ? 0.03 : 0.008)
+            const P = new Float32Array(sel.verts.length * 3)
+            sel.verts.forEach((v, k) => P.set(positions.slice(v * 3, v * 3 + 3), k * 3))
+            const N = new Float32Array(P.length)
+            const A = garmentAttributes(bodyParts, pc.f, pc, P, N)
+            return { verts: P, N, A, tri: sel.tri }
+          }),
+      ),
+    )
+  }
+  return { lods, garments, pivots: B.pivots, head: B.head, top: TOP }
 }

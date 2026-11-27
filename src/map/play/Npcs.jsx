@@ -34,6 +34,8 @@ import { LINES } from '../characters/critterInfo'
 const NEAR = 25
 const REACT_R = 6
 const INTERACT_R = 2
+/** photo width (px): at least this, more when the screen is wider */
+const PHOTO_W = 1920
 const MAX_ROWS = 64
 
 /** soft round contact shadow (shared by the NPCs and the player) */
@@ -301,7 +303,7 @@ export default function Npcs({ world, zones, state, data, landmark }) {
         n.smile = 1
         return { id: n.id, mission: !!n.mission, zoneMission: g.zone.mission, zone: g.zone.name }
       },
-      /** pose both for a photo; resolves with a JPEG data URL once the frame is drawn */
+      /** pose both for a photo; resolves with the JPEG ({ blob, w, h }) once the frame is drawn */
       photo: (ref, pose) => {
         const n = find(ref)
         if (!n) return Promise.resolve(null)
@@ -460,15 +462,26 @@ export default function Npcs({ world, zones, state, data, landmark }) {
     }
   }
 
-  /** the photo: the next frame drawn with the photo camera, 640 px wide JPEG */
+  /**
+   * the photo: the next frame drawn with the photo camera at PHOTO_W px wide
+   * (the drawing buffer is enlarged for this one frame, same aspect) → JPEG
+   * { blob, w, h }
+   */
   function capture() {
+    const size = gl.getSize(new THREE.Vector2())
+    const pr = gl.getPixelRatio()
+    const w = Math.max(PHOTO_W, Math.round(size.x * pr))
+    gl.setPixelRatio(w / size.x)
+    gl.setSize(size.x, size.y, false)
     gl.render(scene, camera)
     const src = gl.domElement
     const c = document.createElement('canvas')
-    c.width = 640
-    c.height = Math.round((640 * src.height) / src.width)
-    c.getContext('2d').drawImage(src, 0, 0, c.width, c.height)
-    return c.toDataURL('image/jpeg', 0.86)
+    c.width = src.width
+    c.height = src.height
+    c.getContext('2d').drawImage(src, 0, 0)
+    gl.setPixelRatio(pr)
+    gl.setSize(size.x, size.y, false)
+    return new Promise((resolve) => c.toBlob((blob) => resolve(blob && { blob, w: c.width, h: c.height }), 'image/jpeg', 0.9))
   }
 
   useFrame((_, rawDt) => {

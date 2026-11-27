@@ -224,14 +224,14 @@ const FRAG = /* glsl */ `
     col = mix(col, vec3(0.93, 0.45, 0.45), bl * 0.5 * vLayout2.x);
     // eyes: tall ovals with a highlight; closed (blink / big smile) → an arc
     float closed = max(blink, smoothstep(0.55, 0.95, smile));
-    vec2 er = vec2(0.1, 0.13) * es;
+    vec2 er = vec2(0.112, 0.138) * es; // big, nearly round: all pupil (no white showing)
     if (closed < 0.5) {
       float h = mix(1.0, 0.12, closed * 2.0);
       float e = aa(ellipseD(f, vec2(ex, ey), vec2(er.x, er.y * h)));
       col = mix(col, ink, e);
-      float hl = aa(ellipseD(f, vec2(ex - 0.03 * es, ey + 0.045 * es), vec2(0.034, 0.04) * es)) * step(0.5, h);
+      float hl = aa(ellipseD(f, vec2(ex - 0.034 * es, ey + 0.05 * es), vec2(0.038, 0.044) * es)) * step(0.5, h);
       col = mix(col, vec3(1.0), hl * 0.95);
-      float hl2 = aa(ellipseD(f, vec2(ex + 0.03 * es, ey - 0.055 * es), vec2(0.016, 0.016) * es)) * step(0.5, h);
+      float hl2 = aa(ellipseD(f, vec2(ex + 0.035 * es, ey - 0.06 * es), vec2(0.019, 0.019) * es)) * step(0.5, h);
       col = mix(col, vec3(1.0), hl2 * 0.8);
       // a warm iris glow at the bottom of the eye
       float iris = aa(ellipseD(f, vec2(ex, ey - er.y * 0.45 * h), vec2(er.x * 0.62, er.y * 0.35 * h))) * e;
@@ -247,28 +247,27 @@ const FRAG = /* glsl */ `
     // mouth (opens while talking)
     float my = vLayout2.w;
     if (talk > 0.05 && style < 2.5) {
-      float o = aa(ellipseD(f, vec2(0.0, my - 0.035), vec2(0.055, 0.045 * talk)));
+      float o = aa(ellipseD(f, vec2(0.0, my - 0.03), vec2(0.04, 0.035 * talk)));
       col = mix(col, vec3(0.55, 0.16, 0.18), o);
     }
     if (style < 0.5) {
-      // ω
-      float d = min(arcD(f, vec2(0.06, my), 0.06, 3.3, 6.1), 9.0);
-      col = mix(col, ink, aa(d - 0.02));
-      col = mix(col, ink, aa(segD(f, vec2(0.0, my + 0.0), vec2(0.0, my + 0.07)) - 0.018));
-      float o = aa(ellipseD(f, vec2(0.0, my - 0.05), vec2(0.05, 0.05 * smile)));
-      col = mix(col, vec3(0.6, 0.18, 0.2), o * step(0.15, smile) * (1.0 - step(0.0, -f.y + my - 0.12)));
+      // a small soft ω (no line down from the nose, no open jaw)
+      float d = min(arcD(f, vec2(0.04, my + 0.01), 0.04, 3.4, 6.0), 9.0);
+      col = mix(col, ink, aa(d - 0.013));
+      float o = aa(ellipseD(f, vec2(0.0, my - 0.03), vec2(0.03, 0.028 * smile)));
+      col = mix(col, vec3(0.78, 0.36, 0.38), o * step(0.3, smile));
     } else if (style < 1.5) {
-      float r = 0.11 + 0.04 * smile;
-      float d = arcD(f, vec2(0.0, my + r * 0.75), r, 3.6 - smile * 0.25, 5.82 + smile * 0.25);
-      col = mix(col, ink, aa(d - 0.02));
+      float r = 0.075 + 0.025 * smile;
+      float d = arcD(f, vec2(0.0, my + r * 0.75), r, 3.7 - smile * 0.25, 5.72 + smile * 0.25);
+      col = mix(col, ink, aa(d - 0.015));
       if (smile > 0.5) {
         float o = aa(max(ellipseD(f, vec2(0.0, my + r * 0.75), vec2(r * 0.92)), f.y - (my + r * 0.75 - r * 0.55)));
         col = mix(col, vec3(0.62, 0.2, 0.22), o);
       }
     } else if (style < 2.5) {
       // bunny: little y
-      col = mix(col, ink, aa(segD(f, vec2(0.0, my + 0.07), vec2(0.0, my)) - 0.018));
-      col = mix(col, ink, aa(min(arcD(f, vec2(0.05, my), 0.05, 3.3 - smile * 0.4, 6.0), 9.0) - 0.018));
+      col = mix(col, ink, aa(segD(f, vec2(0.0, my + 0.04), vec2(0.0, my)) - 0.013));
+      col = mix(col, ink, aa(min(arcD(f, vec2(0.035, my), 0.035, 3.3 - smile * 0.4, 6.0), 9.0) - 0.013));
     }
     return col;
   }

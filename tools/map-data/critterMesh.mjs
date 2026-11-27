@@ -107,8 +107,8 @@ export function speciesParts(S) {
     if (marks.has('blaze') && fz > 0.3 && Math.abs(fx) < 0.16 && fy > -0.2) return LIGHT
     if (marks.has('eyeRings') && fz > 0.3 && (Math.abs(fx) - S.face.ex) ** 2 + (fy - S.face.ey) ** 2 < 0.05) return LIGHT
     if (marks.has('eyePatch') && fz > 0.2 && (fx - S.face.ex) ** 2 + (fy - S.face.ey) ** 2 < 0.07) return MARK
-    if (marks.has('stripes') && fy > 0.35 && fz > -0.2 && Math.sin(fx * 22) > 0.4) return MARK
-    if (marks.has('tabbyLight') && fy > 0.4 && Math.sin(fx * 20) > 0.5) return MARK
+    if (marks.has('stripes') && fy > 0.55 && fz < 0.45 && Math.sin(fx * 16) > 0.55) return MARK
+    if (marks.has('tabbyLight') && fy > 0.55 && fz < 0.45 && Math.sin(fx * 16) > 0.6) return MARK
     if (marks.has('spots') && fz < 0.4 && spot(p, 0.06, 0.014)) return MARK
     if (marks.has('patches') && fx > 0.2 && fy > 0.0) return MARK
     if (marks.has('neckSheen') && fy < -0.7) return MARK
@@ -147,19 +147,21 @@ export function speciesParts(S) {
   const lightBall = (c, r, blend = 0.03) => P(ellipsoid(c, r), { bone: BONE.head, zone: ZONE.head, code: LIGHT, blend })
   switch (S.muzzle) {
     case 'cat':
-      for (const s of [-1, 1]) lightBall([s * 0.034, HC[1] - 0.07, front - 0.025], [0.045, 0.036, 0.034], 0.02)
-      nose([0, HC[1] - 0.045, front - 0.004], [0.017, 0.012, 0.01], '#d98a8f')
+      // one small round muzzle standing out a little (like the bear's), not whisker pads
+      lightBall(mz(-0.072, -0.012), [0.05, 0.038, 0.042], 0.03)
+      nose(mz(-0.05, 0.022), [0.016, 0.011, 0.01], '#e39aa0')
       break
     case 'bunny':
-      for (const s of [-1, 1]) lightBall([s * 0.03, HC[1] - 0.075, front - 0.03], [0.04, 0.034, 0.032], 0.02)
-      nose([0, HC[1] - 0.05, front - 0.008], [0.014, 0.01, 0.009], '#e38f9c')
-      if (S.extras?.includes('cheeks')) for (const s of [-1, 1]) lightBall([s * 0.11, HC[1] - 0.07, front - 0.07], [0.07, 0.06, 0.055], 0.04)
+      lightBall(mz(-0.074, -0.014), [0.046, 0.036, 0.04], 0.03)
+      nose(mz(-0.052, 0.018), [0.014, 0.01, 0.009], '#e38f9c')
+      // round full cheeks in the fur colour (not white whisker pads)
+      if (S.extras?.includes('cheeks')) for (const s of [-1, 1]) P(ellipsoid([s * 0.12, HC[1] - 0.06, front - 0.08], [0.06, 0.052, 0.05]), { bone: BONE.head, zone: ZONE.head, code: MAIN, blend: 0.05 })
       break
     case 'dog':
     case 'fox': {
       const fox = S.muzzle === 'fox'
-      P(roundCone(mz(-0.06, -0.07), mz(fox ? -0.075 : -0.08, fox ? 0.06 : 0.035), 0.07, fox ? 0.03 : 0.045), { bone: BONE.head, zone: ZONE.head, code: LIGHT, blend: 0.04 })
-      nose(mz(fox ? -0.06 : -0.055, fox ? 0.085 : 0.075), [0.026, 0.02, 0.018])
+      P(roundCone(mz(-0.065, -0.06), mz(-0.075, fox ? 0.02 : 0.015), 0.068, fox ? 0.042 : 0.05), { bone: BONE.head, zone: ZONE.head, code: LIGHT, blend: 0.04 })
+      nose(mz(fox ? -0.05 : -0.048, fox ? 0.058 : 0.062), [0.024, 0.018, 0.016])
       break
     }
     case 'bear':
@@ -171,7 +173,7 @@ export function speciesParts(S) {
     case 'cowMuzzle':
     case 'sheep':
     case 'horse': {
-      const big = S.muzzle === 'horse' ? 1.1 : S.muzzle === 'deer' ? 0.85 : 1
+      const big = S.muzzle === 'deer' ? 0.85 : 1
       const col = S.muzzle === 'cowMuzzle' ? FIXED : LIGHT
       P(ellipsoid(mz(-0.085, -0.02 + (big - 1) * 0.1), [0.105 * big, 0.08 * big, 0.085 * big]), { bone: BONE.head, zone: ZONE.head, code: col, color: '#f0b9b3', blend: 0.05 })
       for (const s of [-1, 1]) nose(add(mz(-0.08, 0.055 + (big - 1) * 0.12), [s * 0.035, 0, 0]), [0.012, 0.016, 0.01], S.muzzle === 'cowMuzzle' ? '#8a5a5a' : '#2a2224')
@@ -179,17 +181,17 @@ export function speciesParts(S) {
       break
     }
     case 'boar':
-      P(roundCone(mz(-0.06, -0.06), mz(-0.075, 0.05), 0.075, 0.06), { bone: BONE.head, zone: ZONE.head, code: LIGHT, blend: 0.04 })
-      P(ellipsoid(mz(-0.075, 0.105), [0.058, 0.048, 0.016]), { bone: BONE.head, zone: ZONE.head, code: FIXED, color: '#c98a86', fur: 0, blend: 0.012 })
-      for (const s of [-1, 1]) nose(mz(-0.075, 0.12).map((v, i) => v + [s * 0.02, 0, 0][i]), [0.009, 0.013, 0.006], '#5a2e2e')
+      P(roundCone(mz(-0.065, -0.05), mz(-0.075, 0.015), 0.07, 0.058), { bone: BONE.head, zone: ZONE.head, code: LIGHT, blend: 0.04 })
+      P(ellipsoid(mz(-0.075, 0.068), [0.052, 0.043, 0.016]), { bone: BONE.head, zone: ZONE.head, code: FIXED, color: '#e0a29c', fur: 0, blend: 0.012 })
+      for (const s of [-1, 1]) nose(mz(-0.075, 0.082).map((v, i) => v + [s * 0.018, 0, 0][i]), [0.008, 0.011, 0.006], '#7a4040')
       break
     case 'dragon':
-      P(roundCone(mz(-0.05, -0.08), mz(-0.065, 0.07), 0.1, 0.075), { bone: BONE.head, zone: ZONE.head, code: LIGHT, blend: 0.05 })
-      for (const s of [-1, 1]) nose(mz(-0.03, 0.13).map((v, i) => v + [s * 0.03, 0, 0][i]), [0.012, 0.01, 0.008])
+      P(roundCone(mz(-0.07, -0.05), mz(-0.075, 0.015), 0.068, 0.055), { bone: BONE.head, zone: ZONE.head, code: LIGHT, blend: 0.05 })
+      for (const s of [-1, 1]) nose(mz(-0.05, 0.064).map((v, i) => v + [s * 0.022, 0, 0][i]), [0.009, 0.007, 0.006])
       break
     case 'hedgehog':
-      P(roundCone(mz(-0.05, -0.06), mz(-0.065, 0.075), 0.07, 0.028), { bone: BONE.head, zone: ZONE.head, code: LIGHT, blend: 0.04 })
-      nose(mz(-0.062, 0.1), [0.022, 0.018, 0.016])
+      P(roundCone(mz(-0.065, -0.05), mz(-0.072, 0.025), 0.065, 0.04), { bone: BONE.head, zone: ZONE.head, code: LIGHT, blend: 0.04 })
+      nose(mz(-0.064, 0.064), [0.021, 0.017, 0.015])
       break
     case 'owlBeak':
       P(roundCone(mz(-0.03, -0.01), mz(-0.085, 0.035), 0.026, 0.008), { bone: BONE.head, zone: ZONE.head, code: FIXED, color: '#e2b55a', fur: 0, blend: 0.01 })
@@ -218,11 +220,11 @@ export function speciesParts(S) {
     case 'fox': {
       const big = S.ears === 'fox' ? 1.25 : 1
       const b = [0.105, HC[1] + 0.13, HC[2] - 0.01]
-      const t = [0.15, HC[1] + 0.13 + 0.14 * big, HC[2] - 0.02]
-      ear(b, flat(roundCone(b, t, 0.06 * big, 0.012), b, [0, 0, 0], [1, 1, 0.45]))
-      ear(b, flat(roundCone(add(b, [0.005, 0.015, 0.02]), add(t, [-0.004, -0.03, 0.02]), 0.036 * big, 0.008), b, [0, 0, 0], [1, 1, 0.3]), { code: FIXED, color: '#e9b4ae', fur: 0, blend: 0.008 })
-      if (S.ears === 'tufted') ear(b, roundCone(t, add(t, [0.01, 0.07, -0.005]), 0.012, 0.004), { code: FIXED, color: '#2a211b', fur: 1, blend: 0.006 })
-      if (S.ears === 'fox') ear(b, roundCone(add(t, [-0.01, -0.035, 0]), t, 0.02, 0.012), { code: MARK, blend: 0.01 })
+      const t = [0.145, HC[1] + 0.13 + 0.105 * big, HC[2] - 0.02]
+      ear(b, flat(roundCone(b, t, 0.062 * big, 0.028), b, [0, 0, 0], [1, 1, 0.45]))
+      ear(b, flat(roundCone(add(b, [0.005, 0.015, 0.02]), add(t, [-0.004, -0.025, 0.02]), 0.036 * big, 0.016), b, [0, 0, 0], [1, 1, 0.3]), { code: FIXED, color: '#efbcb6', fur: 0, blend: 0.008 })
+      if (S.ears === 'tufted') ear(b, roundCone(add(t, [0, 0.012, 0]), add(t, [0.006, 0.05, -0.005]), 0.016, 0.011), { code: MARK, blend: 0.012 })
+      if (S.ears === 'fox') ear(b, roundCone(add(t, [-0.006, -0.02, 0]), t, 0.03, 0.028), { code: MARK, blend: 0.012 })
       break
     }
     case 'bunny':
@@ -240,7 +242,7 @@ export function speciesParts(S) {
       const r = S.ears === 'small' ? 0.038 : 0.055
       const b = [0.12, HC[1] + 0.13, HC[2] - 0.02]
       const c = add(b, [0.02, 0.03, 0])
-      if (S.ears === 'boar') ear(b, flat(roundCone(b, add(b, [0.06, 0.08, -0.01]), 0.045, 0.012), b, [0, 0, 0], [1, 1, 0.45]))
+      if (S.ears === 'boar') ear(b, flat(roundCone(b, add(b, [0.05, 0.065, -0.01]), 0.045, 0.024), b, [0, 0, 0], [1, 1, 0.45]))
       else {
         ear(b, flat(ellipsoid(c, [r, r, r]), c, [0, 0, 0], [1, 1, 0.5]))
         ear(b, flat(ellipsoid(add(c, [0, 0, 0.012]), [r * 0.6, r * 0.6, r * 0.6]), c, [0, 0, 0], [1, 1, 0.3]), { code: LIGHT, blend: 0.006 })
@@ -270,7 +272,7 @@ export function speciesParts(S) {
       const L = S.ears === 'donkey' ? 0.2 : 0.12
       const b = [0.11, HC[1] + 0.14, HC[2] - 0.03]
       const t = add(b, [0.05, L, -0.01])
-      ear(b, flat(roundCone(b, t, 0.04, 0.014), b, [0, 0, 0], [1, 1, 0.5]), { code: (p) => (S.ears === 'donkey' && p[1] > t[1] - 0.03 ? MARK : MAIN) })
+      ear(b, flat(roundCone(b, t, 0.042, 0.024), b, [0, 0, 0], [1, 1, 0.5]), { code: (p) => (S.ears === 'donkey' && p[1] > t[1] - 0.03 ? MARK : MAIN) })
       ear(b, flat(roundCone(add(b, [0.004, 0.02, 0.012]), add(t, [-0.005, -0.03, 0.012]), 0.022, 0.008), b, [0, 0, 0], [1, 1, 0.35]), { code: LIGHT, blend: 0.006 })
       break
     }
@@ -278,17 +280,17 @@ export function speciesParts(S) {
       const b = [0.11, HC[1] + 0.14, HC[2] - 0.02]
       const t = add(b, [0.03, 0.09, 0])
       ear(b, flat(roundCone(b, t, 0.04, 0.012), b, [0, 0, 0], [1, 1, 0.5]))
-      ear(b, roundCone(t, add(t, [0.005, 0.045, -0.005]), 0.014, 0.004), { code: MARK, blend: 0.008 })
+      ear(b, roundCone(t, add(t, [0.004, 0.03, -0.005]), 0.016, 0.011), { code: MARK, blend: 0.01 })
       break
     }
     case 'owl': {
       const b = [0.13, HC[1] + 0.14, HC[2] - 0.01]
-      ear(b, flat(roundCone(b, add(b, [0.045, 0.085, -0.01]), 0.035, 0.008), b, [0, 0, 0], [1, 1, 0.45]))
+      ear(b, flat(roundCone(b, add(b, [0.04, 0.07, -0.01]), 0.035, 0.018), b, [0, 0, 0], [1, 1, 0.45]))
       break
     }
     case 'fin': {
       const b = [0.17, HC[1] + 0.06, HC[2] - 0.04]
-      ear(b, flat(roundCone(b, add(b, [0.085, 0.04, -0.04]), 0.035, 0.01), b, [0, 0, 0], [1, 1, 0.4]), { code: MARK })
+      ear(b, flat(roundCone(b, add(b, [0.075, 0.035, -0.04]), 0.035, 0.018), b, [0, 0, 0], [1, 1, 0.4]), { code: MARK })
       break
     }
     default:
@@ -307,25 +309,25 @@ export function speciesParts(S) {
   }
   if (S.horns === 'bull') {
     horn([0.13, HC[1] + 0.11, HC[2] - 0.02], [0.24, HC[1] + 0.13, HC[2] - 0.01], 0.032, 0.022)
-    horn([0.24, HC[1] + 0.13, HC[2] - 0.01], [0.28, HC[1] + 0.21, HC[2] + 0.0], 0.022, 0.008)
+    horn([0.24, HC[1] + 0.13, HC[2] - 0.01], [0.27, HC[1] + 0.19, HC[2] + 0.0], 0.022, 0.016)
   }
-  if (S.horns === 'cow') horn([0.1, HC[1] + 0.14, HC[2] - 0.02], [0.15, HC[1] + 0.2, HC[2] - 0.02], 0.02, 0.009)
+  if (S.horns === 'cow') horn([0.1, HC[1] + 0.14, HC[2] - 0.02], [0.14, HC[1] + 0.19, HC[2] - 0.02], 0.02, 0.014)
   if (S.horns === 'goat') {
     horn([0.06, HC[1] + 0.16, HC[2] - 0.01], [0.09, HC[1] + 0.25, HC[2] - 0.07], 0.028, 0.02, '#8f8577')
-    horn([0.09, HC[1] + 0.25, HC[2] - 0.07], [0.11, HC[1] + 0.24, HC[2] - 0.15], 0.02, 0.008, '#8f8577')
+    horn([0.09, HC[1] + 0.25, HC[2] - 0.07], [0.11, HC[1] + 0.24, HC[2] - 0.14], 0.02, 0.014, '#8f8577')
   }
   if (S.horns === 'antlers') {
     const c = '#8a6a4a'
     horn([0.07, HC[1] + 0.15, HC[2] - 0.02], [0.1, HC[1] + 0.27, HC[2] - 0.04], 0.016, 0.012, c)
-    horn([0.1, HC[1] + 0.27, HC[2] - 0.04], [0.16, HC[1] + 0.34, HC[2] - 0.06], 0.012, 0.007, c)
-    horn([0.095, HC[1] + 0.24, HC[2] - 0.035], [0.06, HC[1] + 0.32, HC[2] - 0.02], 0.01, 0.006, c)
+    horn([0.1, HC[1] + 0.27, HC[2] - 0.04], [0.16, HC[1] + 0.34, HC[2] - 0.06], 0.012, 0.011, c)
+    horn([0.095, HC[1] + 0.24, HC[2] - 0.035], [0.065, HC[1] + 0.31, HC[2] - 0.02], 0.01, 0.01, c)
   }
   if (S.horns === 'dragon') {
-    horn([0.07, HC[1] + 0.14, HC[2] - 0.05], [0.1, HC[1] + 0.22, HC[2] - 0.13], 0.025, 0.008)
+    horn([0.07, HC[1] + 0.14, HC[2] - 0.05], [0.095, HC[1] + 0.2, HC[2] - 0.11], 0.025, 0.017)
   }
 
   // ---- extras
-  if (extras.has('ruff')) for (const s of [-1, 1]) P(roundCone([s * 0.15, HC[1] - 0.08, HC[2] + 0.06], [s * 0.24, HC[1] - 0.14, HC[2] + 0.02], 0.05, 0.012), { bone: BONE.head, zone: ZONE.head, code: LIGHT, blend: 0.04 })
+  if (extras.has('ruff')) for (const s of [-1, 1]) P(ellipsoid([s * 0.165, HC[1] - 0.075, HC[2] - 0.01], [0.05, 0.05, 0.05]), { bone: BONE.head, zone: ZONE.head, code: MAIN, blend: 0.06 })
   if (extras.has('tusks')) for (const s of [-1, 1]) P(roundCone(mz(-0.085, 0.04).map((v, i) => v + [s * 0.055, 0, 0][i]), mz(-0.03, 0.06).map((v, i) => v + [s * 0.075, 0, 0][i]), 0.011, 0.004), { bone: BONE.head, zone: ZONE.head, code: FIXED, color: '#f3ead6', fur: 0, blend: 0.006 })
   if (extras.has('bristles')) P(roundCone([0, HC[1] + 0.17, HC[2] + 0.04], [0, 0.5, -0.12], 0.025, 0.02), { bone: BONE.head, zone: ZONE.head, code: MARK, blend: 0.03 })
   if (extras.has('beard')) P(roundCone(mz(-0.14, -0.05), mz(-0.24, -0.06), 0.028, 0.008), { bone: BONE.head, zone: ZONE.head, code: LIGHT, blend: 0.02 })
@@ -351,14 +353,14 @@ export function speciesParts(S) {
       const c = onHead ? HC : [0, 0.38, -0.01]
       const r = onHead ? HR : [0.17, 0.2, 0.15]
       const base = add(c, [d[0] * r[0] * 0.92, d[1] * r[1] * 0.92, d[2] * r[2] * 0.92])
-      P(roundCone(base, add(base, mul(d, 0.075 + 0.02 * u)), 0.026, 0.004), { bone: onHead ? BONE.head : BONE.body, zone: ZONE.other, code: MARK, blend: 0.012 })
+      P(roundCone(base, add(base, mul(d, 0.062 + 0.016 * u)), 0.026, 0.011), { bone: onHead ? BONE.head : BONE.body, zone: ZONE.other, code: MARK, blend: 0.012 })
       k++
     }
   }
   if (extras.has('spikes')) for (let k = 0; k < 5; k++) {
     const t = k / 4
     const base = [0, HC[1] + HR[1] - 0.02 - t * 0.42, HC[2] - 0.1 - t * 0.06]
-    P(roundCone(base, add(base, [0, 0.03, -0.06]), 0.03, 0.006), { bone: t < 0.3 ? BONE.head : BONE.body, zone: ZONE.other, code: LIGHT, blend: 0.01 })
+    P(roundCone(base, add(base, [0, 0.025, -0.05]), 0.03, 0.015), { bone: t < 0.3 ? BONE.head : BONE.body, zone: ZONE.other, code: LIGHT, blend: 0.01 })
   }
   if (extras.has('wings'))
     for (const s of [-1, 1]) {

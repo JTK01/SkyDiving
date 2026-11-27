@@ -77,8 +77,8 @@ function hintText(walk, state) {
   if (!walk && state?.canopy) return 'A/D 선회 · W 가속 · S 브레이크 · 드래그로 시점 · V 1·3인칭'
   if (!walk) return 'WASD / 방향키 이동 · SPACE 낙하산 · 드래그로 시점 · V 1·3인칭'
   if (walk.mode === 'look') return '성당 위에서는 둘러보기만 할 수 있어요 · 드래그로 시점'
-  if (walk.mode === 'roof') return 'WASD 걷기 · Shift 달리기 · P 사진 포즈 · V 1·3인칭 (이 지붕 위에서만)'
-  return `WASD 걷기 · Shift 달리기 · 동물 곁에서 E · P 사진 포즈 · V 1·3인칭 (착지 지점 반경 ${WALK.radius} m)`
+  if (walk.mode === 'roof') return 'WASD 걷기 · Shift 달리기 · V 1·3인칭 (이 지붕 위에서만)'
+  return `WASD 걷기 · Shift 달리기 · 동물 곁에서 E · V 1·3인칭 (착지 지점 반경 ${WALK.radius} m)`
 }
 
 /** what the jumper touched (state.contact from DropController) */

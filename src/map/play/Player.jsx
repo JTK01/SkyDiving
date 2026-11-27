@@ -12,7 +12,7 @@ import { avatarMaterial } from '../characters/avatarMaterial'
  * The player's avatar, driven by the drop state (third-person view):
  *   free fall → 'freefall' · canopy open → 'canopy' (+ the ram-air canopy)
  *   on foot   → 'landing' (after a canopy landing), 'idle' / 'walk' / 'run',
- *               photo poses ('cheer', 'victory', 'stand1', 'stand2', with an animal 'vsign' / 'hug' / 'jump'; s.photoPose, s.photoLift)
+ *               photo poses with an animal ('fighting' 화이팅 / 'hug' / 'jump'; s.photoPose, s.photoLift)
  * Rigged glTF built from the Tripo + Mixamo source (tools/map-data/
  * build_avatar.mjs → public/models/characters/player.glb + KTX2 colour and
  * normal maps): 41 Mixamo bones, two meshes (near within 30 m of the camera,
@@ -22,7 +22,8 @@ import { avatarMaterial } from '../characters/avatarMaterial'
 const NEAR = 30
 const BASE = import.meta.env.BASE_URL || '/'
 const URL = `${BASE}models/characters/player.glb`
-const ONCE = new Set(['landing'])
+// one-shot clips, and the still poses (held on their last key: no looping, no shake)
+const ONCE = new Set(['landing', 'fighting', 'hug', 'jump', 'stand1', 'stand2'])
 
 function setMap(m, key, t) {
   t.flipY = false
@@ -159,7 +160,7 @@ export default function Player({ state }) {
     let anim = 'freefall'
     if (s.canopy && !s.ended) anim = 'canopy'
     if (onFoot) {
-      if (s.photoT > 0 || s.photoPose) anim = s.photoPose || 'cheer'
+      if (s.photoPose) anim = s.photoPose
       else if (s.soft && s.walk.t < 1.1) anim = 'landing'
       else anim = res.speed > 2.4 ? 'run' : res.speed > 0.3 ? 'walk' : 'idle'
     }

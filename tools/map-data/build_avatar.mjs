@@ -6,8 +6,8 @@
  *
  * - mesh + skeleton (41 Mixamo bones) from Idle.fbx; every FBX carries the same rig, so its
  *   clip is used as is: idle, walk, run, freefall, landing, victory, stand1, stand2
- * - canopy (hands up on the toggles) is derived from the standing pose; cheer is the
- *   victory clip held at its peak; vsign / hug / jump for photos with an NPC
+ * - canopy (hands up on the toggles) is derived from the standing pose; photo poses
+ *   with an NPC: fighting (화이팅, the victory clip held still at its peak), hug, jump
  * - root motion removed from the walk / run cycles (the game moves the body)
  * - scaled to 1.75 m; LOD0 ≈ 20 k, LOD1 ≈ 4.5 k triangles (meshoptimizer, UV seams kept)
  * - UV v flipped to the glTF convention (KTX2 textures are not flipped at load);
@@ -125,9 +125,8 @@ for (const [name, file] of Object.entries(SOURCES)) {
 }
 
 /**
- * photo poses with an NPC (the NPC stands at the player's left, +x):
- *   vsign: right hand up beside the head · hug: left arm over the partner's
- *   shoulder · jump: the airborne first frames of the landing clip
+ * photo poses with an NPC (the NPC, 60–80 % of the player's height, stands at the
+ * player's left, +x): hug: left arm over the partner's shoulders / head
  */
 function posed(name, aims) {
   const c = clips.stand1.clone()
@@ -151,21 +150,27 @@ function posed(name, aims) {
   mixer.uncacheRoot(root)
   clips[name] = c
 }
-posed('vsign', [
-  ['mixamorigRightArm', 'mixamorigRightForeArm', [-0.62, 0.12, 0.55]],
-  ['mixamorigRightForeArm', 'mixamorigRightHand', [0.2, 0.95, 0.12]],
-])
 posed('hug', [
-  ['mixamorigLeftArm', 'mixamorigLeftForeArm', [0.92, 0.3, -0.05]],
-  ['mixamorigLeftForeArm', 'mixamorigLeftHand', [0.75, -0.62, 0.05]],
+  ['mixamorigLeftArm', 'mixamorigLeftForeArm', [0.8, -0.5, 0.08]],
+  ['mixamorigLeftForeArm', 'mixamorigLeftHand', [0.5, -0.85, 0.12]],
 ])
-clips.jump = THREE.AnimationUtils.subclip(clips.landing, 'jump', 0, 2, 30)
 
-// cheer: the victory clip held at its peak (fist up, 0.5 s) for photos
-{
-  const c = THREE.AnimationUtils.subclip(clips.victory, 'cheer', 15, 17, 30)
-  clips.cheer = c
+/**
+ * a still pose: one frame of a clip, as two identical keys. (Holding a pose with a
+ * short loop of several frames — the earlier 'cheer' looped frames 15–17 of the
+ * victory clip, where the fist is still pumping — makes the hand shake.)
+ */
+function hold(clip, frame, name) {
+  const t = frame / 30
+  const tracks = clip.tracks.map((tr) => {
+    const v = tr.createInterpolant().evaluate(t).slice()
+    return new tr.constructor(tr.name, [0, 1 / 30], [...v, ...v])
+  })
+  return new THREE.AnimationClip(name, 1 / 30, tracks)
 }
+// 화이팅: the victory clip at its peak (fist up); jump: the airborne first frame of the landing
+clips.fighting = hold(clips.victory, 15, 'fighting')
+clips.jump = hold(clips.landing, 0, 'jump')
 
 // ---- LODs --------------------------------------------------------------------
 function indexed(g) {

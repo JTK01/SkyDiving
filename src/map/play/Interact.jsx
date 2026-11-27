@@ -11,12 +11,12 @@ import { useCollection } from '../../state/useCollection'
  *   정체 확인하기: the zone's mission animal → '발견!', why it stands for
  *   Spain / Barcelona with sources, saved in the collection; any other animal
  *   → '이 친구는 아니에요' with its name and a hint toward the mission animal.
- *   함께 사진 찍기: pose (브이 포즈 / 어깨동무 / 점프) → Npcs poses both and
+ *   함께 사진 찍기: pose (화이팅 / 어깨동무 / 점프) → Npcs poses both and
  *   frames them with the basilica → the photo is saved in the collection with
  *   the animal's name, the pose and the time.
  */
 const POSES = [
-  ['vsign', '브이 포즈'],
+  ['fighting', '화이팅'],
   ['hug', '어깨동무'],
   ['jump', '점프'],
 ]

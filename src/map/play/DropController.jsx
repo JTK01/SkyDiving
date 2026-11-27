@@ -19,7 +19,6 @@ import { edgeDist, polyDist } from './collision'
  *    opens the canopy over CANOPY.open s: ≈ 5 m/s down, 8 m/s forward, A/D
  *    turn, W/S faster / brakes; a canopy landing is soft (landing animation)
  *  - camera: third person behind the avatar (V toggles first person);
- *    P on foot plays the photo pose with the camera in front
  * The HUD reads the live state through `state` (no re-renders per frame).
  */
 const G = 9.81
@@ -88,7 +87,6 @@ export function createDropState(drop, groundY, yawDeg) {
     canopy: false,
     canopyT: 0, // canopy opening progress 0 … 1
     soft: false, // landed under an open canopy
-    photoT: 0, // photo pose time left (s)
     agl: drop.altitude,
     t: 0,
   }
@@ -109,7 +107,6 @@ export default function DropController({ drop, world, state, onEnd, enabled = tr
         e.preventDefault()
       }
       if (e.code === 'KeyV' && !e.repeat) state.view = state.view === 'first' ? 'third' : 'first'
-      if (e.code === 'KeyP' && !e.repeat && state.walk && state.walk.mode !== 'look') state.photoT = 2.6
       if (KEYS[e.code]) {
         keys.add(KEYS[e.code])
         e.preventDefault()
@@ -198,7 +195,7 @@ export default function DropController({ drop, world, state, onEnd, enabled = tr
 
   const walkStep = (dt) => {
     const w = state.walk
-    if (w.mode === 'look' || state.photoT > 0 || state.ui || (state.soft && w.t < 1.1)) return
+    if (w.mode === 'look' || state.ui || (state.soft && w.t < 1.1)) return
     const f = (keys.has('f') ? 1 : 0) - (keys.has('b') ? 1 : 0)
     const s = (keys.has('r') ? 1 : 0) - (keys.has('l') ? 1 : 0)
     if (!f && !s) return
@@ -241,7 +238,6 @@ export default function DropController({ drop, world, state, onEnd, enabled = tr
       // on foot: no physics
       const w = state.walk
       w.t = (w.t || 0) + rawDt
-      state.photoT = Math.max(0, state.photoT - rawDt)
       walkStep(Math.min(rawDt, 0.1))
       state.y = w.feet + WALK.eye
       state.agl = w.feet - world.heightAt(state.x, state.z)
@@ -261,12 +257,6 @@ export default function DropController({ drop, world, state, onEnd, enabled = tr
       } else if (state.view === 'first') {
         camera.position.set(state.x, state.y, state.z)
         camera.rotation.set(state.pitch, state.yaw, 0)
-      } else if (state.photoT > 0 && state.face !== undefined) {
-        // photo: the camera steps in front of the avatar
-        const fx = Math.sin(state.face)
-        const fz = Math.cos(state.face)
-        camera.position.set(state.x + fx * 3 - fz * 0.4, w.feet + 1.35, state.z + fz * 3 + fx * 0.4)
-        camera.lookAt(state.x, w.feet + 0.95, state.z)
       } else thirdPerson(state.x, w.feet + 1.25, state.z, CAM.walk, w.feet)
       return
     }

@@ -28,7 +28,7 @@ import { LINES } from '../characters/critterInfo'
  * identify (mission animal of the zone? — the only way to collect it) and
  * photo (player and animal side by side at the zone's photo spot — the spot of
  * the zone with the clearest ray-checked view of the basilica — facing a camera placed so
- * both and the basilica are in frame; poses vsign / hug / jump; returns a
+ * both and the basilica are in frame; poses fighting (화이팅) / hug / jump; returns a
  * JPEG; both go back to where they were afterwards).
  */
 const NEAR = 25
@@ -391,17 +391,19 @@ export default function Npcs({ world, zones, state, data, landmark }) {
     }
     const heading = Math.atan2(-bx, -bz) // facing the camera
     const left = [Math.cos(heading), -Math.sin(heading)]
-    let px = n.x - left[0] * 0.95
-    let pz = n.z - left[1] * 0.95
+    const gap = pose === 'hug' ? 0.62 : 0.9 // closer for the arm over the shoulders
+    let px = n.x - left[0] * gap
+    let pz = n.z - left[1] * gap
     if (world.blocked(px, world.heightAt(px, pz), pz, 0.3, 1.6)) {
-      px = n.x + left[0] * 0.95
-      pz = n.z + left[1] * 0.95
+      px = n.x + left[0] * gap
+      pz = n.z + left[1] * gap
     }
     n.heading = heading
     n.mode = 'pose'
     n.held = true
     n.smile = 1
-    n.armPose = pose === 'vsign' ? [1, 0, 0, 0] : pose === 'hug' ? [0, 0, 0, 1] : [1, 1, 0, 0]
+    // 화이팅: the outer arm up; 어깨동무: the inner arm out around the player; 점프: both up
+    n.armPose = pose === 'fighting' ? [1, 0, 0, 0] : pose === 'hug' ? [0, 0, 0, 1] : [1, 1, 0, 0]
     n.photoHop = pose === 'jump' ? 0.3 : 0
     const feet = world.heightAt(px, pz)
     Object.assign(state, { x: px, z: pz, face: heading, photoPose: pose, photoLift: pose === 'jump' ? 0.35 : 0 })

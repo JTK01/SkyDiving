@@ -623,6 +623,11 @@ function attributes(parts, field, head, P, normalsOut) {
         if (!byBone.has(q.bone) || d < byBone.get(q.bone)) byBone.set(q.bone, d)
       }
     }
+    // the torso surface never follows the arms (the clothes over it do not either)
+    if (near.tag === 'torso') {
+      byBone.delete(BONE.armL)
+      byBone.delete(BONE.armR)
+    }
     const ranked = [...byBone.entries()].sort((a, b) => a[1] - b[1])
     const [b0, d0] = ranked[0]
     const [b1, d1] = ranked[1] || [b0, Infinity]
@@ -665,8 +670,10 @@ function garmentAttributes(bodyParts, field, piece, P, normalsOut) {
     const nrm = mul(g, 1 / (len(g) || 1))
     normalsOut.set(nrm, v * 3)
     const q = sub(p, mul(nrm, 0.02))
+    const tags = piece.follow(p)
     const byBone = new Map()
     for (const part of bodyParts) {
+      if (!tags.includes(part.tag)) continue
       if (len(sub(q, part.bc)) - part.br > 0.08) continue
       const d = part.f(q)
       if (!byBone.has(part.bone) || d < byBone.get(part.bone)) byBone.set(part.bone, d)

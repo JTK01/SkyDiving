@@ -41,21 +41,44 @@ function tagged(parts, tags) {
  * band (1.3 cm wide, 0.5 cm proud) along every region edge
  */
 function piece(components, { code, color = null, band = 0.006, bandW = 0.013, rigid = false }) {
+  const one = (c, p) => {
+    const body = c.field(p)
+    if (body > 0.08) return Infinity
+    const r = c.region(p)
+    const g = c.gap + (c.fold ? c.fold(p) : 0)
+    const shell = Math.max(body - g, r)
+    const rim = Math.max(body - g - band, Math.max(r, -r - bandW))
+    return Math.min(shell, c.noBand ? Infinity : rim)
+  }
   const f = (p) => {
     let d = Infinity
-    for (const c of components) {
-      const body = c.field(p)
-      if (body > 0.08) continue
-      const r = c.region(p)
-      const g = c.gap + (c.fold ? c.fold(p) : 0)
-      const shell = Math.max(body - g, r)
-      const rim = Math.max(body - g - band, Math.max(r, -r - bandW))
-      d = Math.min(d, shell, c.noBand ? Infinity : rim)
-    }
+    for (const c of components) d = Math.min(d, one(c, p))
     return d
   }
-  return { f, code, color, rigid }
+  /** the body tags a surface point of the piece may follow: those of the component it lies on */
+  const follow = (p) => {
+    let best = null
+    let bd = Infinity
+    for (const c of components) {
+      const v = Math.abs(one(c, p))
+      if (v < bd) {
+        bd = v
+        best = c
+      }
+    }
+    return best?.follow || TORSO_ONLY
+  }
+  return { f, code, color, rigid, follow }
 }
+/**
+ * which body parts a component's cloth follows (skinning): the torso panels,
+ * hems, collars and waistbands only the spine / pelvis (the body bone), so a
+ * raised arm cannot drag the hem up; sleeves the arm (blended into the body at
+ * the shoulder); trouser legs the leg (blended at the hip)
+ */
+const TORSO_ONLY = ['torso']
+const SLEEVE = ['torso', 'arm', 'hand']
+const LEG = ['torso', 'leg', 'foot']
 
 export function garmentPieces(S, B) {
   const parts = B.parts
@@ -78,10 +101,10 @@ export function garmentPieces(S, B) {
   const legFold = (p) => 0.003 * (0.5 + 0.5 * Math.sin(legT(p) * 40 + p[2] * 25))
   const hemDrape = (y0) => (p) => 0.004 * Math.max(0, 1 - (p[1] - y0) / 0.07) * (0.5 + 0.5 * Math.sin(Math.atan2(p[0], p[2]) * 11))
   const rib = (p) => 0.0025 * (0.5 + 0.5 * Math.sin(Math.atan2(p[0], p[2]) * 40))
-  const top = (y0, y1, gap, extra = {}) => ({ field: torso, region: slab(y0, y1), gap, fold: hemDrape(y0), ...extra })
-  const sleeve = (t1, gap, fold = sleeveFold) => ({ field: arms, region: armTo(t1), gap, fold })
-  const trouser = (t1, gap) => ({ field: legs, region: legTo(t1), gap, fold: legFold })
-  const pelvis = (y0, y1, gap) => ({ field: torso, region: slab(y0, y1), gap, noBand: true })
+  const top = (y0, y1, gap, extra = {}) => ({ field: torso, region: slab(y0, y1), gap, fold: hemDrape(y0), follow: TORSO_ONLY, ...extra })
+  const sleeve = (t1, gap, fold = sleeveFold) => ({ field: arms, region: armTo(t1), gap, fold, follow: SLEEVE })
+  const trouser = (t1, gap) => ({ field: legs, region: legTo(t1), gap, fold: legFold, follow: LEG })
+  const pelvis = (y0, y1, gap) => ({ field: torso, region: slab(y0, y1), gap, noBand: true, follow: TORSO_ONLY })
   const birdSleeve = B.axes.bird ? 0.5 : 1
 
   /** surface point of the torso straight out from (x, y) toward ±z (for straps) */
@@ -104,7 +127,7 @@ export function garmentPieces(S, B) {
     return (p) => Math.min(...segs.map((g) => g(p)))
   }
   const mirrorMin = (f) => (p) => Math.min(f(p), f([-p[0], p[1], p[2]]))
-  const solid = (f, code, color) => ({ f, code, color })
+  const solid = (f, code, color) => ({ f, code, color, follow: () => TORSO_ONLY })
   const buttons = (pts, color = '#e0b84a') => solid((p) => Math.min(...pts.map((c) => ellipsoid(c, [0.011, 0.011, 0.006])(p))), FIXED, color)
   const frontZ = (y) => surfaceZ(0, y, 1)
 

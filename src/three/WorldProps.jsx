@@ -1,16 +1,19 @@
-import { useMemo, useRef } from 'react'
-import { useFrame } from '@react-three/fiber'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { useFrame, useThree } from '@react-three/fiber'
 import * as THREE from 'three'
 import { cine } from '../state/cinematic'
 
 /**
  * Main-world props for the SKY DIVE METAVERSE prototype:
- *  - the local player's jumper (stylised placeholder, belly-to-earth arch)
+ *  - the local player's jumper: the player avatar (the same model as in a drop)
+ *    playing its free-fall clip — loaded lazily (avatarProp.js, a separate chunk,
+ *    fetched when the browser is idle) so the first screen does not wait for it
  *  - formation slots where future multiplayer avatars will be placed
  *  - streaming air particles to sell the freefall speed
  * All of it fades in with `cine.worldReveal`.
  */
 export const PLAYER_ANCHOR = new THREE.Vector3(0, 127, -172)
+const AVATAR_SCALE = 3.4
 
 /** Formation slots, relative to the player anchor — reserved for multiplayer. */
 export const AVATAR_SLOTS = [
@@ -23,71 +26,34 @@ export const AVATAR_SLOTS = [
   [6, -1.6, 11],
 ]
 
-function Limb({ from, to, radius, material }) {
-  const { position, quaternion, length } = useMemo(() => {
-    const a = new THREE.Vector3(...from)
-    const b = new THREE.Vector3(...to)
-    const dir = b.clone().sub(a)
-    const len = dir.length()
-    const q = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir.normalize())
-    return { position: a.clone().add(b).multiplyScalar(0.5), quaternion: q, length: len }
-  }, [from, to])
-  return (
-    <mesh position={position} quaternion={quaternion} material={material}>
-      <capsuleGeometry args={[radius, Math.max(0.01, length - radius * 2), 4, 10]} />
-    </mesh>
-  )
-}
-
-function Jumper({ materials }) {
-  const { suit, accent, helmet, skin } = materials
-  // body lies along -Z (head forward), +Y is the back (facing the camera)
-  return (
-    <group>
-      <Limb from={[0, 0, 0.9]} to={[0, 0, -0.9]} radius={0.42} material={suit} />
-      <Limb from={[0, 0.05, -0.2]} to={[0, 0.05, -0.85]} radius={0.44} material={accent} />
-      {/* rig / container */}
-      <mesh position={[0, 0.42, -0.15]} material={helmet}>
-        <boxGeometry args={[0.75, 0.3, 1.05]} />
-      </mesh>
-      <mesh position={[0, 0.12, -1.45]} material={helmet}>
-        <sphereGeometry args={[0.33, 20, 16]} />
-      </mesh>
-      {/* arms: out & bent forward */}
-      <Limb from={[-0.45, 0.05, -0.6]} to={[-1.25, 0.15, -0.75]} radius={0.15} material={suit} />
-      <Limb from={[-1.25, 0.15, -0.75]} to={[-1.45, 0.3, -1.55]} radius={0.13} material={accent} />
-      <Limb from={[0.45, 0.05, -0.6]} to={[1.25, 0.15, -0.75]} radius={0.15} material={suit} />
-      <Limb from={[1.25, 0.15, -0.75]} to={[1.45, 0.3, -1.55]} radius={0.13} material={accent} />
-      <mesh position={[-1.47, 0.32, -1.66]} material={skin}>
-        <sphereGeometry args={[0.11, 10, 8]} />
-      </mesh>
-      <mesh position={[1.47, 0.32, -1.66]} material={skin}>
-        <sphereGeometry args={[0.11, 10, 8]} />
-      </mesh>
-      {/* legs: spread, knees bent up */}
-      <Limb from={[-0.22, 0, 0.8]} to={[-0.6, 0.05, 1.75]} radius={0.18} material={suit} />
-      <Limb from={[-0.6, 0.05, 1.75]} to={[-0.75, 0.75, 2.3]} radius={0.15} material={suit} />
-      <Limb from={[0.22, 0, 0.8]} to={[0.6, 0.05, 1.75]} radius={0.18} material={suit} />
-      <Limb from={[0.6, 0.05, 1.75]} to={[0.75, 0.75, 2.3]} radius={0.15} material={suit} />
-    </group>
-  )
-}
-
 export default function WorldProps() {
   const group = useRef()
   const jumper = useRef()
   const slotsRef = useRef([])
   const particlesRef = useRef()
 
-  const materials = useMemo(() => {
-    const m = {
-      suit: new THREE.MeshStandardMaterial({ color: '#1d2f55', roughness: 0.7, transparent: true }),
-      accent: new THREE.MeshStandardMaterial({ color: '#e5533d', roughness: 0.6, transparent: true }),
-      helmet: new THREE.MeshStandardMaterial({ color: '#15171c', roughness: 0.35, metalness: 0.2, transparent: true }),
-      skin: new THREE.MeshStandardMaterial({ color: '#d9d3c8', roughness: 0.8, transparent: true }),
+  const { gl } = useThree()
+  const [avatar, setAvatar] = useState(null)
+  useEffect(() => {
+    let live = true
+    let loaded = null
+    const start = () =>
+      import('./avatarProp')
+        .then((m) => m.loadAvatarProp(gl))
+        .then((a) => {
+          loaded = a
+          if (live) setAvatar(a)
+          else a.dispose()
+        })
+        .catch(() => {})
+    // after the first screen is up: idle time, or 2 s at the latest
+    const idle = window.requestIdleCallback ? window.requestIdleCallback(start, { timeout: 2000 }) : setTimeout(start, 1200)
+    return () => {
+      live = false
+      if (window.cancelIdleCallback && typeof idle === 'number') window.cancelIdleCallback(idle)
+      loaded?.dispose()
     }
-    return m
-  }, [])
+  }, [gl])
 
   const slotMaterial = useMemo(
     () =>
@@ -129,7 +95,10 @@ export default function WorldProps() {
     g.visible = r > 0.001
     if (!g.visible) return
     const t = state.clock.elapsedTime
-    Object.values(materials).forEach((m) => (m.opacity = r))
+    if (avatar) {
+      avatar.setOpacity(r)
+      avatar.mixer.update(Math.min(dt, 0.1))
+    }
     slotMaterial.opacity = r * (0.22 + Math.sin(t * 1.6) * 0.08)
 
     // freefall body: gentle bob, roll & yaw corrections
@@ -156,8 +125,9 @@ export default function WorldProps() {
 
   return (
     <group ref={group} position={PLAYER_ANCHOR} visible={false}>
-      <group ref={jumper} scale={1.6}>
-        <Jumper materials={materials} />
+      <group ref={jumper}>
+        {/* belly down, head toward −z, back to the camera; ≈ the old figure's size */}
+        {avatar && <primitive object={avatar.scene} scale={AVATAR_SCALE} rotation={[0, Math.PI, 0]} position={[0, -AVATAR_SCALE * 0.96, 0]} />}
       </group>
       {AVATAR_SLOTS.map((p, i) => (
         <mesh

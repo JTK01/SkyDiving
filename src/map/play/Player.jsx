@@ -144,8 +144,10 @@ export default function Player({ state }) {
     g.visible = !first
     // position: hips at the body centre in the air, feet on the surface on foot
     const onFoot = !!s.walk
-    const feet = onFoot ? s.walk.feet : s.y - HIPS
-    g.position.set(s.x, feet + (onFoot ? s.photoLift || 0 : 0), s.z)
+    // in the air: the interpolated render position (the camera's), not the last physics step
+    const R = !onFoot && s.render ? s.render : s
+    const feet = onFoot ? s.walk.feet : R.y - HIPS
+    g.position.set(R.x, feet + (onFoot ? s.photoLift || 0 : 0), R.z)
     const moved = Math.hypot(s.x - res.last.x, s.z - res.last.z)
     res.speed = THREE.MathUtils.lerp(res.speed, dt > 0 ? moved / dt : 0, 0.2)
     if (onFoot && moved > 1e-4 && !s.photoPose) s.face = Math.atan2(s.x - res.last.x, s.z - res.last.z) // a photo pose keeps its facing

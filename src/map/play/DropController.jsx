@@ -307,8 +307,15 @@ export default function DropController({ drop, world, state, onEnd, enabled = tr
       }
     }
     if (world) state.agl = state.y - world.heightAt(state.x, state.z)
+    // render position: between the last two physics steps (alpha), shared with the
+    // avatar (Player.jsx) — the camera and the body must use the same point, or the
+    // body slides back and forth on screen by up to one step of the fall (≈ 0.45 m)
     const p = sim.prev && alpha < 1 ? sim.prev : null
-    camera.position.set(p ? p.x + (state.x - p.x) * alpha : state.x, p ? p.y + (state.y - p.y) * alpha : state.y, p ? p.z + (state.z - p.z) * alpha : state.z)
+    const R = state.render || (state.render = { x: 0, y: 0, z: 0 })
+    R.x = p ? p.x + (state.x - p.x) * alpha : state.x
+    R.y = p ? p.y + (state.y - p.y) * alpha : state.y
+    R.z = p ? p.z + (state.z - p.z) * alpha : state.z
+    camera.position.set(R.x, R.y, R.z)
     if (state.camOverride && state.frozen) {
       // ?debug captures in the air (frozen drop)
       camera.position.set(...state.camOverride.pos)
@@ -329,6 +336,6 @@ export default function DropController({ drop, world, state, onEnd, enabled = tr
       swayY = a * (0.6 * Math.sin(t * 1.7 + 0.5) + 0.4 * Math.sin(t * 2.9 + 2.1))
     }
     camera.rotation.set(state.pitch + swayP, state.yaw + swayY, 0)
-  })
+  }, -1) // before the avatar's frame (it reads state.render)
   return null
 }

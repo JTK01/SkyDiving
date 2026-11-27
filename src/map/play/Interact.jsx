@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { SPECIES, MISSION } from '../characters/critters'
 import { MISSION_INFO, HINTS } from '../characters/critterInfo'
 import { useCollection } from '../../state/useCollection'
@@ -226,9 +227,66 @@ export default function Interact({ state, panel, setPanel }) {
   )
 }
 
-/** the collection: identified mission animals and the photos */
+/**
+ * one photo large in the middle of the screen with the animal, the pose and the
+ * time; ←/→ (or the buttons) for the previous / next photo; Esc or a click
+ * outside the photo closes it (and only it — the collection stays open)
+ */
+function PhotoViewer({ photos, index, setIndex }) {
+  const p = photos[index]
+  const n = photos.length
+  useEffect(() => {
+    const kd = (e) => {
+      if (e.code === 'Escape') setIndex(null)
+      else if (e.code === 'ArrowLeft') setIndex((index - 1 + n) % n)
+      else if (e.code === 'ArrowRight') setIndex((index + 1) % n)
+      else return
+      e.preventDefault()
+      e.stopPropagation() // not the panel's own Esc
+    }
+    window.addEventListener('keydown', kd, true)
+    return () => window.removeEventListener('keydown', kd, true)
+  }, [index, n, setIndex])
+  if (!p) return null
+  // portal: the collection panel is transformed, which would trap position: fixed inside it
+  return createPortal(
+    <div className="photo-viewer" role="dialog" aria-modal="true" aria-label="사진 보기" onClick={() => setIndex(null)}>
+      <figure onClick={(e) => e.stopPropagation()}>
+        <img src={p.image} alt={`${p.name} ${p.poseName}`} />
+        <figcaption>
+          <strong>{p.name}</strong> · {p.poseName}
+          <br />
+          <small>
+            {new Date(p.at).toLocaleString('ko-KR')}
+            {p.zone ? ` · ${p.zone}` : ''}
+          </small>
+          <span className="photo-viewer__count">
+            {index + 1} / {n}
+          </span>
+        </figcaption>
+        {n > 1 && (
+          <>
+            <button type="button" className="photo-viewer__nav photo-viewer__nav--prev" aria-label="이전 사진" onClick={() => setIndex((index - 1 + n) % n)}>
+              ‹
+            </button>
+            <button type="button" className="photo-viewer__nav photo-viewer__nav--next" aria-label="다음 사진" onClick={() => setIndex((index + 1) % n)}>
+              ›
+            </button>
+          </>
+        )}
+        <button type="button" className="photo-viewer__close" aria-label="닫기" onClick={() => setIndex(null)}>
+          ×
+        </button>
+      </figure>
+    </div>,
+    document.body,
+  )
+}
+
+/** the collection: identified mission animals and the photos (a photo opens large) */
 export function CollectionPanel({ onClose }) {
   const { found, photos } = useCollection()
+  const [view, setView] = useState(null)
   return (
     <div className="interact interact--collection" role="dialog" aria-label="컬렉션">
       <h3>
@@ -244,9 +302,11 @@ export function CollectionPanel({ onClose }) {
       </ul>
       <div className="collection__photos">
         {photos.length === 0 && <p className="interact__text">아직 사진이 없어요. 동물 곁에서 E → 함께 사진 찍기.</p>}
-        {photos.map((p) => (
+        {photos.map((p, k) => (
           <figure key={p.id}>
-            <img src={p.image} alt={`${p.name} ${p.poseName}`} />
+            <button type="button" className="collection__open" onClick={() => setView(k)} aria-label={`${p.name} ${p.poseName} 사진 크게 보기`}>
+              <img src={p.image} alt={`${p.name} ${p.poseName}`} />
+            </button>
             <figcaption>
               {p.name} · {p.poseName}
               <br />
@@ -258,6 +318,7 @@ export function CollectionPanel({ onClose }) {
       <div className="interact__row">
         <button type="button" onClick={onClose}>닫기</button>
       </div>
+      {view !== null && <PhotoViewer photos={photos} index={view} setIndex={setView} />}
     </div>
   )
 }

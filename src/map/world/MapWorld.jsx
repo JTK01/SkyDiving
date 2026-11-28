@@ -4,6 +4,7 @@ import Atmosphere from './Atmosphere'
 import Terrain from './Terrain'
 import { MidBuildings, NearBuildings, useAtlas } from './Buildings'
 import Features from './Features'
+import { useStreetTextures, StreetDetail } from './Streets'
 import Trees from './Trees'
 import Basilica from './Basilica'
 import { PostFX, AutoResolution } from './Rendering'
@@ -19,6 +20,8 @@ export default function MapWorld({ map, data, manifest, mode, quality, onStats }
   const play = mode === 'play'
   const Q = preset(quality)
   const atlas = useAtlas()
+  // street-level ground near the landmark (play only: the preview stays aerial)
+  const streets = useStreetTextures(data, manifest, play)
   const [shadowVersion, setShadowVersion] = useState(0)
   const bump = () => setShadowVersion((v) => v + 1)
   // preview: terrain alone makes the first frame; then mid-zone boxes, then
@@ -46,11 +49,13 @@ export default function MapWorld({ map, data, manifest, mode, quality, onStats }
         maxTiles={Q.maxTiles}
         maxLevel={play ? 8 : 5} // L8 = 256 m tiles at 0.5 m/px; the preview stops at 4 m/px
         anisotropy={Q.anisotropy}
+        streets={streets}
         onStats={stats}
       />
       {stage >= 1 && <MidBuildings data={data} manifest={manifest} atlas={atlas} maxDistance={play ? Q.midDistance : 2700} />}
       {stage >= 2 && <NearBuildings data={data} atlas={atlas} onLoaded={bump} />}
       {play && <Features data={data} />}
+      {play && streets && <StreetDetail data={data} manifest={manifest} />}
       {play && <Trees data={data} stride={Q.treeStride} near={Q.treeNear} mid={Q.treeMid} far={Q.treeDistance} msaa={Q.bloom ? Q.msaa : 0} />}
       <Basilica position={[lm.x, groundY, lm.z]} rotation={[0, THREE.MathUtils.degToRad(lm.rotationDeg), 0]} onLoaded={bump} onLevel={bump} />
       {Q.bloom && <PostFX samples={Q.msaa} />}

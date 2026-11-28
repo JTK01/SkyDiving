@@ -57,6 +57,13 @@ const fragment = /* glsl */ `
   uniform vec3 uSunColor;
   uniform vec3 uSky;
   uniform float uTime;
+  // street-level ground (Streets.jsx): mask (R road distance, G class, B water distance) + atlases
+  uniform sampler2D uStreetMask;
+  uniform sampler2D uGroundAlb;
+  uniform sampler2D uGroundNrm;
+  uniform float uStreetOn;
+  uniform float uStreetHalf;
+  uniform float uStreetSize;
   varying vec2 vUv;
   varying vec3 vWorld;
   varying vec3 vNormalW;
@@ -69,9 +76,48 @@ const fragment = /* glsl */ `
     return mix(mix(hash(i), hash(i + vec2(1, 0)), f.x), mix(hash(i + vec2(0, 1)), hash(i + vec2(1, 1)), f.x), f.y);
   }
 
+  // a cell of the 3×2 ground atlases; derivatives passed in (taken in uniform control flow)
+  // (each cell: the texture in the middle 15/16, a wrapped border of 1/32 around it)
+  vec2 cellUv(float cell, vec2 p) {
+    vec2 c = vec2(mod(cell, 3.0), floor(cell / 3.0));
+    return (c + 0.03125 + fract(p) * 0.9375) / vec2(3.0, 2.0);
+  }
+  // A tiled texture seen at a grazing angle (pixel footprint long along the view)
+  // turns into moiré rings wherever the filtering is too sharp; there the cell
+  // fades to its average colour (its 1-texel mip) and the normal to flat.
+  float farFade(vec2 dx, vec2 dy) { return smoothstep(0.025, 0.1, max(length(dx), length(dy))); }
+  vec3 cellAlb(float cell, vec2 p, vec2 dx, vec2 dy) {
+    // average linear colour of each cell (build_ground_textures.py atlas)
+    vec3 mean = cell < 0.5 ? vec3(0.195) : cell < 1.5 ? vec3(0.4815) : cell < 2.5 ? vec3(0.1268, 0.1612, 0.0343)
+      : cell < 3.5 ? vec3(0.3328, 0.2586, 0.156) : cell < 4.5 ? vec3(0.707, 0.6808, 0.6274) : vec3(0.608, 0.6151, 0.4863);
+    float f = farFade(dx, dy);
+    if (f > 0.999) return mean;
+    return mix(textureGrad(uGroundAlb, cellUv(cell, p), dx * vec2(0.3125, 0.46875), dy * vec2(0.3125, 0.46875)).rgb, mean, f);
+  }
+  // tangent normal (OpenGL convention, image v down = −z) → world offset (x, z)
+  vec2 cellNrm(float cell, vec2 p, vec2 dx, vec2 dy) {
+    float f = farFade(dx, dy);
+    if (f > 0.999) return vec2(0.0);
+    vec2 t = textureGrad(uGroundNrm, cellUv(cell, p), dx * vec2(0.3125, 0.46875), dy * vec2(0.3125, 0.46875)).xy * 2.0 - 1.0;
+    return vec2(t.x, -t.y) * (1.0 - f);
+  }
+  float sdRound(vec2 p, vec2 b, float r) { vec2 q = abs(p) - b + r; return length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - r; }
+  // Barcelona panot (20 cm, four raised tablets): relief height 0..1 in tile units
+  float panotH(vec2 q) {
+    vec2 f = fract(q);
+    float e = min(min(f.x, 1.0 - f.x), min(f.y, 1.0 - f.y));
+    float joint = smoothstep(0.0, 0.035, e);
+    vec2 g = fract(f * 2.0) - 0.5; // quadrant
+    float tab = 1.0 - smoothstep(-0.03, 0.03, sdRound(g, vec2(0.33), 0.12));
+    return joint * (0.45 + 0.55 * tab);
+  }
+
   void main() {
     #include <logdepthbuf_fragment>
     vec3 albedo = texture2D(uMap, vUv).rgb;
+    // derivatives for the street layer (here: uniform control flow)
+    vec2 sdx = dFdx(vWorld.xz);
+    vec2 sdy = dFdy(vWorld.xz);
     vec3 n = normalize(vNormalW);
     vec3 toCam = cameraPosition - vWorld;
     float dist = length(toCam);
@@ -85,8 +131,83 @@ const fragment = /* glsl */ `
     albedo = mix(albedo, rock, smoothstep(0.28, 0.55, slope) * (1.0 - vSea));
     albedo *= mix(1.0, 0.86, smoothstep(250.0, 450.0, vWorld.y) * (1.0 - vSea));
 
+    // ---- street level near the landmark: real ground materials instead of the photo
+    float water = vSea;
+    float street = 0.0;
+    if (uStreetOn > 0.5) {
+      vec2 sp = vWorld.xz;
+      float inside = uStreetHalf - max(abs(sp.x), abs(sp.y));
+      street = clamp(inside / 30.0, 0.0, 1.0) * (1.0 - smoothstep(90.0, 220.0, dist));
+    }
+    if (street > 0.001) {
+      vec2 sp = vWorld.xz;
+      vec2 muv = (sp + uStreetHalf) / (2.0 * uStreetHalf);
+      vec4 m = texture2D(uStreetMask, muv);
+      float roadD = (m.r * 255.0 - 128.0) / 16.0; // + inside the carriageway (m)
+      float waterD = (m.b * 255.0 - 128.0) / 16.0;
+      ivec2 tc = ivec2(clamp(muv, 0.0, 0.9999) * uStreetSize);
+      float cls = floor(texelFetch(uStreetMask, tc, 0).g * 255.0 + 0.5);
+      float big = noise(sp * 0.06) * 0.6 + noise(sp * 0.23) * 0.4; // large-scale variation
+      float pix = length(sdx) + length(sdy); // metres per pixel
+      vec3 sa = vec3(0.0);
+      vec2 dn = vec2(0.0);
+      float pond = 0.0;
+      if (roadD > 0.0) {
+        // asphalt (2.6 m texture), slightly varied
+        vec2 p = sp / 2.6;
+        sa = cellAlb(0.0, p, sdx / 2.6, sdy / 2.6) * vec3(0.62, 0.62, 0.64) * (0.9 + 0.2 * big);
+        dn = cellNrm(0.0, p, sdx / 2.6, sdy / 2.6) * 0.5;
+      } else if (waterD > 0.0) {
+        sa = vec3(0.05, 0.11, 0.11); // pond (shaded below like the sea)
+        pond = 1.0;
+      } else if (cls > 2.5 && cls < 3.5) {
+        // gravel (street tree pits)
+        vec2 p = sp / 1.5;
+        sa = cellAlb(4.0, p, sdx / 1.5, sdy / 1.5) * vec3(0.78, 0.74, 0.68);
+        dn = cellNrm(4.0, p, sdx / 1.5, sdy / 1.5) * 0.8;
+      } else {
+        // paving / sauló / lawn from the soft blend field: smooth edges, organic where lawn meets sand
+        float a = m.a;
+        float wob = noise(sp * 0.8) + 0.5 * noise(sp * 2.3) - 0.75;
+        float wl = smoothstep(0.6, 0.86, a + wob * 0.28);
+        float ws = (1.0 - wl) * smoothstep(0.16, 0.34, a + wob * 0.05);
+        float wp = 1.0 - wl - ws;
+        if (wp > 0.004) {
+          // panot: cement grain + the 20 cm four-tablet relief, tiles slightly different in tone
+          vec2 p = sp / 1.1;
+          vec3 c = cellAlb(1.0, p, sdx / 1.1, sdy / 1.1) * vec3(0.84, 0.82, 0.8);
+          vec2 q = sp / 0.2;
+          float fade = 1.0 - smoothstep(0.006, 0.025, pix); // the relief needs ≥ 8 px per tile
+          float e = 0.004;
+          float h0 = panotH(q);
+          vec2 grad = vec2(panotH(q + vec2(e, 0.0)) - h0, panotH(q + vec2(0.0, e)) - h0) / e;
+          float tv = fract(sin(dot(floor(q), vec2(12.9898, 78.233))) * 43758.5453);
+          c *= mix(1.0, (0.95 + 0.08 * tv) * (0.86 + 0.14 * h0), fade) * (0.94 + 0.12 * big);
+          sa += c * wp;
+          dn += (-grad * 0.07 * fade + cellNrm(1.0, p, sdx / 1.1, sdy / 1.1) * 0.25) * wp;
+        }
+        if (ws > 0.004) {
+          vec2 p = sp / 3.5;
+          sa += cellAlb(3.0, p, sdx / 3.5, sdy / 3.5) * vec3(1.02, 0.98, 0.92) * (0.88 + 0.2 * big) * ws;
+          dn += cellNrm(3.0, p, sdx / 3.5, sdy / 3.5) * 0.6 * ws;
+        }
+        if (wl > 0.004) {
+          vec2 p = sp / 1.4;
+          vec3 tint = cls > 4.5 && cls < 5.5 ? vec3(0.62, 0.9, 0.56) : vec3(0.74, 0.97, 0.62);
+          sa += cellAlb(2.0, p, sdx / 1.4, sdy / 1.4) * tint * (0.8 + 0.32 * big) * wl;
+          dn += cellNrm(2.0, p, sdx / 1.4, sdy / 1.4) * 0.7 * wl;
+        }
+      }
+      // the photo keeps its large shadows / colour drift faintly (trees, kerbside)
+      float lumP = dot(albedo, vec3(0.299, 0.587, 0.114));
+      sa *= mix(1.0, clamp(lumP / 0.32, 0.75, 1.1), 0.25);
+      albedo = mix(albedo, sa, street);
+      n = normalize(n + vec3(dn.x, 0.0, dn.y) * street);
+      water = max(water, pond * street);
+    }
+
     // detail normal map at two scales, faded out with distance
-    float near = uDetailOn * (1.0 - smoothstep(250.0, 2500.0, dist)) * (1.0 - vSea);
+    float near = uDetailOn * (1.0 - smoothstep(250.0, 2500.0, dist)) * (1.0 - vSea) * (1.0 - street);
     if (near > 0.001) {
       vec2 d1 = texture2D(uDetail, vWorld.xz / 22.0).xy * 2.0 - 1.0;
       vec2 d2 = texture2D(uDetail, vWorld.xz / 3.5).xy * 2.0 - 1.0;
@@ -98,16 +219,16 @@ const fragment = /* glsl */ `
     float ndl = max(dot(n, uSun), 0.0) * getShadowMask();
     vec3 col = albedo * (uSky * 0.42 * (0.6 + 0.4 * n.y) + uSunColor * ndl * 1.05);
 
-    // sea: sky reflection with Fresnel, gentle waves and sun glint
-    if (vSea > 0.01) {
+    // sea (and the pond): sky reflection with Fresnel, gentle waves and sun glint
+    if (water > 0.01) {
       vec2 w = vWorld.xz * 0.02 + vec2(uTime * 0.03, uTime * 0.02);
       vec3 wn = normalize(vec3((noise(w * 3.1) - 0.5) * 0.18, 1.0, (noise(w * 2.3 + 7.0) - 0.5) * 0.18));
       float fres = 0.04 + 0.96 * pow(1.0 - max(dot(wn, v), 0.0), 5.0);
       vec3 deep = albedo * 0.85 + vec3(0.02, 0.06, 0.1);
-      vec3 water = mix(deep, uSky * 0.95, fres * 0.85);
+      vec3 wcol = mix(deep, uSky * 0.95, fres * 0.85);
       vec3 h = normalize(uSun + v);
-      water += uSunColor * pow(max(dot(wn, h), 0.0), 280.0) * 3.0;
-      col = mix(col, water, vSea);
+      wcol += uSunColor * pow(max(dot(wn, h), 0.0), 280.0) * 3.0;
+      col = mix(col, wcol, water);
     }
 
     gl_FragColor = vec4(aerialPerspective(col, vWorld), 1.0);
@@ -180,7 +301,7 @@ function buildGeometry(heights, n, size) {
   return g
 }
 
-export default function Terrain({ data, manifest, detail = 1.6, maxTiles = 140, maxLevel = 8, buildPerFrame = 3, anisotropy = 4, onStats }) {
+export default function Terrain({ data, manifest, detail = 1.6, maxTiles = 140, maxLevel = 8, buildPerFrame = 3, anisotropy = 4, streets = null, onStats }) {
   const { camera, gl } = useThree()
   const group = useRef()
   const [, setTick] = useState(0)
@@ -195,6 +316,12 @@ export default function Terrain({ data, manifest, detail = 1.6, maxTiles = 140, 
       uTime: { value: 0 },
       uDetail: { value: null },
       uDetailOn: { value: 0 },
+      uStreetMask: { value: null },
+      uGroundAlb: { value: null },
+      uGroundNrm: { value: null },
+      uStreetOn: { value: 0 },
+      uStreetHalf: { value: 450 },
+      uStreetSize: { value: 1800 },
       ...AERIAL,
       ...THREE.UniformsLib.lights,
     }),
@@ -219,6 +346,20 @@ export default function Terrain({ data, manifest, detail = 1.6, maxTiles = 140, 
       tex?.dispose()
     }
   }, [gl, uniforms, anisotropy])
+
+  // street-level ground textures (Streets.jsx) → the shared uniforms
+  useEffect(() => {
+    const u = uniforms
+    u.uStreetOn.value = streets ? 1 : 0
+    // the sampler must hold a texture even while off
+    u.uStreetMask.value = streets?.mask ?? null
+    u.uGroundAlb.value = streets?.albedo ?? null
+    u.uGroundNrm.value = streets?.normal ?? null
+    if (streets) {
+      u.uStreetHalf.value = streets.half
+      u.uStreetSize.value = streets.size
+    }
+  }, [streets, uniforms])
 
   const tileInfo = (L, i, j) => {
     const s = (2 * T.half) / 2 ** L

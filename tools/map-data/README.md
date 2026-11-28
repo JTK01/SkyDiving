@@ -15,6 +15,10 @@ python fetch_overture.py base water 1300 $RAW/water.parquet
 python build_tiles.py $RAW ../../public/tiles/sagrada-familia   # + ICGC WMS, cached in $RAW/icgc
 python build_textures.py ../../public/textures                  # building atlas, detail normal (KTX2)
 node build_basilica.mjs                                          # basilica.glb (meshopt) + colliders.json
+python build_streets.py ../../public/tiles/sagrada-familia     # street-level ground: streets/mask.png + streets.bin
+python build_ground_textures.py $RAW/ambientcg $RAW/tex ground  # ambientCG CC0 → ground atlases (PNG)
+node encode_ktx2.mjs $RAW/tex/ground_albedo.png:../../public/textures/ground_albedo.ktx2
+node encode_ktx2.mjs --normal --q=200 $RAW/tex/ground_normal.png:../../public/textures/ground_normal.ktx2
 ```
 
 Behind a proxy: `AWS_CA_BUNDLE`, `CURL_CA_BUNDLE`, `GDAL_HTTP_PROXY`.

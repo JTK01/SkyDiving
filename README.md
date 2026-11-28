@@ -124,6 +124,7 @@ src/
 | 중거리 ≤2.7 km | 건물을 방향 있는 박스로 인스턴싱(같은 아틀라스), 프리셋별 표시 거리 1.6/2.3/2.7 km | Overture Maps(OSM) |
 | 지형 | 쿼드트리 L0 65 km … L8 256 m, 경사·고도 재질 혼합 + 디테일 노멀 | Copernicus DEM GLO-30 |
 | 항공영상 | L5–L8(≤3 km): ICGC 25 cm 정사영상 512 px, L0–L4: Sentinel-2, 모두 KTX2(ETC1S) | ICGC(CC BY 4.0), Sentinel-2 |
+| 착지 후 지면(성당 ±450 m) | 항공사진 대신 실제 거리 구성: 차도 아스팔트 + 흰 차선(3 m 선 / 4 m 간격)·교차로 진입부 지브라 횡단보도, 화강암 연석(14 cm), 인도 바르셀로나 파놋(20 cm 네 알 무늬 요철), 공원 잔디·사울로 흙길(나무 밑·가장자리·길), 가로수 자갈 구덩이, 가우디 광장 연못(물 반사 + 석재 테두리). 카메라에서 90–220 m 사이에 항공사진으로 섞여 들어가고, 그 너머·상공에서는 기존과 같음 | 도로 중심선·구역·나무(Overture/OSM), ambientCG CC0 텍스처 6종 |
 
 - 타일: `public/tiles/<map>/` (≈8.2 MB, JS 번들 밖). 카메라 위치에 따라 필요한 타일만 요청·업로드하고 LRU로 해제. 기본 URL `VITE_TILES_BASE_URL`, 이미지 소스 `VITE_MAP_IMAGERY`(기본 `hybrid`). 생성 도구: `tools/map-data/`.
 - 성당: 참고 사진 31장(`docs/reference/sagrada-familia/`)과 공식 완공 설계를 근거로 만든 완공 상태 모델(크레인·비계 없음). 분류·차이·근거 구분은 `docs/reference/sagrada-familia/ANALYSIS.md`. 450 m 이내에서만 고디테일 LOD0(약 169 k 삼각형: 실제로 뚫린 첨탑 루버, 창 트레이서리, 변위 조각면의 탄생 파사드, 조각상, 모자이크 능선, 정점 AO 베이크)을 그리고 그 밖은 LOD1(약 16 k). 근거리에서는 석재 4종(마름돌·조각면·다공질·모자이크)의 색·노멀·AO 텍스처를 월드 좌표 3면 투영으로 입힙니다. 에셋 출처: `docs/ASSETS.md`. 생성: `node tools/map-data/build_basilica.mjs`.
